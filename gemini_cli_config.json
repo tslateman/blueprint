@@ -18,5 +18,8 @@
       "Threshold": 1
     }
   ],
-  "History": {}
+  "History": {},
+  "experimental": {
+    "enableAgents": true
+  }
 }
