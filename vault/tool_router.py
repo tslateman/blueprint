@@ -15,7 +15,7 @@ class ToolRouter:
         # Force temporary sandbox config override
         original_net = self.sandbox.allow_net
         # Network must be enabled to install apk packages
-        self.sandbox.allow_net = True
+        self.sandbox.allow_net = network
         
         files = {"script.py": code_string}
         # Install python3 quietly, then run the script

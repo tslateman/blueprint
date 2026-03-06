@@ -1,10 +1,11 @@
 import pytest
+from pathlib import Path
 from blueprint.parser import SpecParser
 from blueprint.compiler import BlueprintCompiler
 from pydantic import BaseModel
 
 def test_spec_parser():
-    spec = SpecParser.parse_yaml("demo_spec.yaml")
+    spec = SpecParser.parse_yaml(Path(__file__).parent / "demo_spec.yaml")
     assert "intent" in spec
     assert "output_schema" in spec
     

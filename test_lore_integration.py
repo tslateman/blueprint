@@ -25,15 +25,13 @@ def test_blueprint_compiler_lore_hydration():
         "tools_allowed": ["lore_search"],
         "lore_context": ["architectural decisions"]
     }
-    
-    with patch("vault.tool_router.ToolRouter.lore_search") as mock_search:
-        mock_search.return_value = "Found 3 decisions: A, B, C."
-        prompt = BlueprintCompiler.compile_prompt(spec)
-        
-        assert "Lore Context" in prompt
-        assert "Query: architectural decisions" in prompt
-        assert "Found 3 decisions: A, B, C." in prompt
-        mock_search.assert_called_once_with("architectural decisions")
+
+    resolver = lambda q: "Found 3 decisions: A, B, C."
+    prompt = BlueprintCompiler.compile_prompt(spec, lore_resolver=resolver)
+
+    assert "Lore Context" in prompt
+    assert "Query: architectural decisions" in prompt
+    assert "Found 3 decisions: A, B, C." in prompt
 
 def test_blueprint_compiler_tools_docs():
     spec = {

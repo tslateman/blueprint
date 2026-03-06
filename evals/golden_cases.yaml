@@ -8,8 +8,10 @@
     - type: "field_contains"
       field: "locations"
       value: "London"
-    - type: "semantic"
-      prompt: "The confidence_score should be a reasonable integer reflecting high certainty (e.g., above 80)."
+    - type: field_range
+      field: confidence_score
+      min: 80
+      max: 100
 
 - id: "lore_anti_hallucination"
   spec_path: "demo_spec_lore.yaml"

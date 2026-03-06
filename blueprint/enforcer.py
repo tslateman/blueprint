@@ -1,7 +1,7 @@
 import os
+import re
 import json
-import os
-import json
+import logging
 import subprocess
 import instructor
 import diskcache
@@ -12,7 +12,10 @@ from google import genai
 from typing import Any, Dict, Type, Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
-...
+
+logger = logging.getLogger(__name__)
+
+
 class SchemaEnforcer:
     """Uses Instructor or Gemini CLI to enforce structured output generation."""
 
@@ -58,27 +61,76 @@ class SchemaEnforcer:
     def generate(self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel], model: Optional[str] = None) -> BaseModel:
         """Generates a structured response strictly enforcing the response_model schema (cached)."""
         model_name = model or getattr(self, "default_model", "gemini-cli")
-        
+
         # Create a cache key from prompt and schema
-        key_data = f"{system_prompt}|{user_prompt}|{model_name}|{response_model.__name__}"
+        schema_json = json.dumps(response_model.model_json_schema(), sort_keys=True)
+        key_data = f"{system_prompt}|{user_prompt}|{model_name}|{response_model.__name__}|{schema_json}"
         cache_key = hashlib.md5(key_data.encode()).hexdigest()
-        
+        cache_key_hash = cache_key
+
         cached_result = self.cache.get(cache_key)
         if cached_result:
+            logger.debug("Cache hit for key %s", cache_key_hash)
             return response_model.model_validate_json(cached_result)
 
-        if self.use_cli:
-            result = self._generate_via_cli(system_prompt, user_prompt, response_model)
-        else:
-            result = self.client.chat.completions.create(
-                model=model_name,
-                response_model=response_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
+        # Build list of available API providers in priority order
+        providers = []
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            providers.append((
+                "anthropic",
+                model or "claude-3-5-sonnet-latest",
+                lambda: instructor.from_anthropic(anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))),
+            ))
+        if os.environ.get("GEMINI_API_KEY"):
+            providers.append((
+                "gemini",
+                model or "gemini-2.5-flash",
+                lambda: instructor.from_genai(genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))),
+            ))
+        if os.environ.get("OPENAI_API_KEY"):
+            providers.append((
+                "openai",
+                model or "gpt-4o-mini",
+                lambda: instructor.from_openai(OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))),
+            ))
+
+        # If a specific provider was pre-selected on the instance, use only that one
+        if hasattr(self, "provider") and not self.use_cli:
+            providers = [p for p in providers if p[0] == self.provider]
+            if not providers:
+                # Fall back to the already-constructed client on the instance
+                providers = [(self.provider, model_name, lambda: self.client)]
+
+        tried = []
+        result = None
+        for provider_name, provider_model, client_factory in providers:
+            logger.info("Using provider: %s (model: %s)", provider_name, provider_model)
+            logger.debug("Cache miss — calling %s API", provider_name)
+            try:
+                client = client_factory()
+                result = client.chat.completions.create(
+                    model=provider_model,
+                    response_model=response_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                break
+            except Exception as e:
+                logger.warning("Provider %s failed: %s — trying next", provider_name, e)
+                tried.append(provider_name)
+
+        if result is None:
+            # All API providers failed — try CLI as final fallback
+            if self.use_cli or os.environ.get("USE_GEMINI_CLI"):
+                logger.warning("Falling back to Gemini CLI mode")
+                result = self._generate_via_cli(system_prompt, user_prompt, response_model)
+            else:
+                raise RuntimeError(
+                    f"All providers failed: {', '.join(tried)}. No result could be generated."
+                )
+
         # Store successful result as JSON
         self.cache.set(cache_key, result.model_dump_json())
         return result
@@ -106,10 +158,8 @@ class SchemaEnforcer:
             response_text = cli_data.get("response", "")
             
             # Clean up potential markdown formatting if the model included it
-            if response_text.startswith("```json"):
-                response_text = response_text.replace("```json", "", 1).replace("```", "", 1).strip()
-            elif response_text.startswith("```"):
-                response_text = response_text.replace("```", "", 1).replace("```", "", 1).strip()
+            response_text = re.sub(r'^```[a-z]*\s*', '', response_text.strip())
+            response_text = re.sub(r'\s*```$', '', response_text)
                 
             return response_model.model_validate_json(response_text)
         except (json.JSONDecodeError, ValueError) as e:

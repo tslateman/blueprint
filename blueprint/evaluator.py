@@ -43,8 +43,10 @@ class EvaluatorHarness:
         self.judge = LLMJudge(self.enforcer)
         
     def run_case(self, case: Dict[str, Any]) -> List[EvalResult]:
-        # Small delay to respect rate limits during batch evals
-        time.sleep(1)
+        # Small delay to respect rate limits during batch evals (CLI mode only)
+        import os
+        if os.getenv("USE_GEMINI_CLI", "").lower() == "true":
+            time.sleep(1)
         
         spec_path = case['spec_path']
         input_text = case['input']
@@ -52,38 +54,36 @@ class EvaluatorHarness:
         
         # Setup mocks for Lore if provided
         lore_mocks = case.get('lore_mocks', {})
-        
-        with patch("vault.tool_router.ToolRouter.lore_search") as mock_search:
-            def side_effect(query):
-                return lore_mocks.get(query, f"No mock data for: {query}")
-            mock_search.side_effect = side_effect
-            
-            # 1. Compile and Execute
-            system_prompt = BlueprintCompiler.compile_prompt(spec)
-            ResponseModel = BlueprintCompiler.compile_schema(spec)
-            
-            result_model = self.enforcer.generate(system_prompt, input_text, ResponseModel)
-            output_dict = result_model.model_dump()
-            
-            # 2. Grade Assertions
-            results = []
-            for assertion in case['assertions']:
-                res = self._grade_assertion(output_dict, assertion)
-                results.append(res)
-                
-            return results
+
+        def lore_resolver(query):
+            return lore_mocks.get(query, f"No mock data for: {query}")
+
+        # 1. Compile and Execute
+        system_prompt = BlueprintCompiler.compile_prompt(spec, lore_resolver=lore_resolver)
+        ResponseModel = BlueprintCompiler.compile_schema(spec)
+
+        result_model = self.enforcer.generate(system_prompt, input_text, ResponseModel)
+        output_dict = result_model.model_dump()
+
+        # 2. Grade Assertions
+        results = []
+        for assertion in case['assertions']:
+            res = self._grade_assertion(output_dict, assertion)
+            results.append(res)
+
+        return results
 
     def _grade_assertion(self, output: Dict[str, Any], assertion: Dict[str, Any]) -> EvalResult:
         a_type = assertion['type']
         field = assertion.get('field')
         
-        if a_type == "field_matches":
+        if a_type in ("field_matches", "field_equals"):
             val = output.get(field)
             expected = assertion['value']
             if val == expected:
                 return EvalResult(passed=True, reason=f"Field '{field}' matches '{expected}'.")
             return EvalResult(passed=False, reason=f"Field '{field}' was '{val}', expected '{expected}'.")
-            
+
         elif a_type == "field_contains":
             val = output.get(field, [])
             expected = assertion['value']
@@ -91,14 +91,21 @@ class EvaluatorHarness:
                 return EvalResult(passed=True, reason=f"Field '{field}' contains '{expected}'.")
             return EvalResult(passed=False, reason=f"Field '{field}' did not contain '{expected}'. Current: {val}")
 
-        elif a_type == "field_equals":
-            val = output.get(field)
-            expected = assertion['value']
-            if val == expected:
-                 return EvalResult(passed=True, reason=f"Field '{field}' equals '{expected}'.")
-            return EvalResult(passed=False, reason=f"Field '{field}' was '{val}', expected '{expected}'.")
+        elif a_type == "field_range":
+            val = getattr(output, assertion.get("field"), None)
+            min_val = assertion.get("min")
+            max_val = assertion.get("max")
+            passed = True
+            if min_val is not None and val < min_val:
+                passed = False
+            if max_val is not None and val > max_val:
+                passed = False
+            field = assertion.get("field")
+            range_str = f"[{min_val if min_val is not None else '-∞'}, {max_val if max_val is not None else '+∞'}]"
+            reason = f"{field}={val} {'within' if passed else 'outside'} {range_str}"
+            return EvalResult(passed=passed, reason=reason)
 
         elif a_type == "semantic":
             return self.judge.evaluate(output, assertion['prompt'])
-            
+
         return EvalResult(passed=False, reason=f"Unknown assertion type: {a_type}")
