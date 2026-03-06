@@ -1,0 +1,26 @@
+- id: "extraction_basic"
+  spec_path: "demo_spec.yaml"
+  input: "I'm Alice and I'm visiting London for a weekend."
+  assertions:
+    - type: "field_matches"
+      field: "target_name"
+      value: "Alice"
+    - type: "field_contains"
+      field: "locations"
+      value: "London"
+    - type: "semantic"
+      prompt: "The confidence_score should be a reasonable integer reflecting high certainty (e.g., above 80)."
+
+- id: "lore_anti_hallucination"
+  spec_path: "demo_spec_lore.yaml"
+  input: "What are the latest decisions about the Martian base construction?"
+  lore_mocks:
+    "architectural decisions": "No records found for Martian base construction."
+    "database schema changes": "No records found."
+    "authentication strategy": "No records found."
+  assertions:
+    - type: "field_equals"
+      field: "decision_count"
+      value: 0
+    - type: "semantic"
+      prompt: "The summary MUST explicitly state that no relevant architectural decisions were found for a Martian base."
