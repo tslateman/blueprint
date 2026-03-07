@@ -1,0 +1,35 @@
+intent: |
+  You are an expert API Architect. Your goal is to generate a 'Facade Interface' 
+  for the Shuru Blueprint utility. You take a raw description of a utility 
+  and produce a clean, ergonomic Python wrapper (a Facade).
+
+triggers:
+  - type: "file"
+    path: "inbox/meta"
+    extension: ".txt"
+    outbox: "outbox/meta"
+
+constraints:
+  - The generated Facade MUST hide all complex 'instructor' and 'subprocess' logic.
+  - The API must be intuitive (e.g., Shuru.run(blueprint, input)).
+  - Include type hints (PEP 484) and docstrings.
+  - The output must be valid Python 3 code.
+
+instructions:
+  - Analyze the 'Desired Utility Description' to identify the required methods.
+  - Implement a singleton or a clean class structure.
+  - Automatically handle environment loading and model registration in the background.
+
+output_schema:
+  facade_name:
+    type: string
+    description: "The name of the generated class (e.g., ShuruFacade)."
+  target_methods:
+    type: array
+    description: "A list of methods implemented in the facade."
+  python_facade_code:
+    type: string
+    description: "The complete Python implementation of the Facade."
+  usage_example:
+    type: string
+    description: "A short Python snippet showing how to use the new Facade."

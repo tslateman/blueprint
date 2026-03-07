@@ -1,0 +1,12 @@
+I want a clean, ergonomic Python class called 'ShuruClient' that simplifies the Shuru Blueprint API.
+
+The class should:
+1. Initialize by loading all blueprints from the 'blueprints/' directory automatically into a registry.
+2. Have a method 'run(model_name: str, user_text: str)' that:
+   - Finds the correct blueprint for that model name.
+   - Compiles the prompt and schema on the fly.
+   - Uses the SchemaEnforcer (with automatic fallback to Gemini CLI) to generate a response.
+   - Returns the validated Pydantic object.
+3. Hide all the low-level logic (instructor, subprocess, etc.) from the user.
+
+Provide a complete implementation with type hints and a short usage example.
