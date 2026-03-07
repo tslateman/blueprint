@@ -18,6 +18,18 @@ test:
 eval:
     USE_GEMINI_CLI=true uv run pytest test_evals.py
 
+# Run the background orchestrator based on blueprint triggers (Agent Team)
+orchestrate:
+    PYTHONPATH=. uv run python examples/07_meta_orchestration.py
+
+# Run the Blueprint Guardian with periodic health checks
+guard:
+    PYTHONPATH=. uv run python blueprint/guardian.py
+
+# Run a self-healing demonstration (Drift Detection -> Remediation)
+heal-demo:
+    PYTHONPATH=. uv run python examples/08_self_healing_demo.py
+
 # Run the semantic evaluation suite via direct API
 eval-api:
     uv run pytest test_evals.py

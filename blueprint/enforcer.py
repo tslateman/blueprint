@@ -20,15 +20,26 @@ class SchemaEnforcer:
     """Uses Instructor or Gemini CLI to enforce structured output generation."""
 
     def __init__(self, api_key: Optional[str] = None, provider: Optional[str] = None, use_cli: bool = False, cache_dir: str = ".eval_cache"):
-        self.use_cli = use_cli
         self.cache = diskcache.Cache(cache_dir)
-
-        if use_cli:
+        
+        # 1. Check for explicit keys or provider
+        has_keys = any(os.environ.get(k) for k in ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"])
+        
+        # 2. Decide whether to use CLI
+        # If use_cli is forced OR (no keys found AND no explicit provider/api_key)
+        self.use_cli = use_cli or (not has_keys and not provider and not api_key)
+        
+        if self.use_cli:
             # Check if gemini is in PATH
             try:
                 subprocess.run(["gemini", "--version"], capture_output=True, check=True)
             except (subprocess.CalledProcessError, FileNotFoundError):
-                raise RuntimeError("Gemini CLI ('gemini') not found in PATH. Cannot use CLI mode.")
+                if use_cli: # Only raise if they explicitly ASKED for CLI and it's missing
+                    raise RuntimeError("Gemini CLI ('gemini') not found in PATH. Cannot use CLI mode.")
+                # Otherwise, let it fall through to the key check which will fail with a helpful message
+                self.use_cli = False
+
+        if self.use_cli:
             return
 
         if not provider:
@@ -39,7 +50,7 @@ class SchemaEnforcer:
             elif os.environ.get("OPENAI_API_KEY"):
                 provider = "openai"
             else:
-                raise ValueError("No API key (ANTHROPIC, GEMINI, or OPENAI) found in environment.")
+                raise ValueError("No API key (ANTHROPIC, GEMINI, or OPENAI) found in environment, and Gemini CLI fallback failed.")
 
         self.provider = provider
         if provider == "anthropic":

@@ -2,6 +2,12 @@ intent: |
   You are an extraction assistant specialized in pulling structured data from raw text.
   Your goal is to parse user descriptions and identify key entities accurately.
 
+triggers:
+  - type: "file"
+    path: "inbox"
+    extension: ".txt"
+    outbox: "outbox"
+
 constraints:
   - You must never make up information. If something is missing, leave it blank or default.
   - All extracted items must perfectly match the case style requested if applicable.

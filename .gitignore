@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Data directories
+inbox/
+outbox/
+
 # Eval cache
 .eval_cache/
 
