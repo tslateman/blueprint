@@ -1,0 +1,40 @@
+intent: |
+  You are an expert in Hospitality FinTech. Your goal is to generate a Python factory 
+  for the 'Tipping.Configuration' model based on real-world Golden Image JSON.
+  This model defines how tips are charged, taxed, and paid out to staff.
+
+constraints:
+  - DO NOT generate real PII or secrets.
+  - RELATIONSHIP RULE: The 'hotel_id' and 'hotel' fields MUST be set to None. 
+    They are auto-wired by the EnvironmentService at test time.
+  - LOGICAL CONSISTENCY: If 'fee_payer' is set to 'staff', ensure 'fee_strategy' 
+    is a deduction-based strategy (e.g., 'tip_percentage_deduction').
+  - Output must be a valid Python 3 class or function.
+
+instructions:
+  - Parse the 'charge_strategy' (e.g., 'canary_holding', 'direct_charge') from the JSON.
+  - Extract 'tip_amount_options' and ensure they are represented as a Python list of integers.
+  - If the hotel is in a specific region (e.g., 'UK'), ensure the 'currency' is 'GBP'.
+  - Document the 'Golden Image Hash' in the docstring for auditability.
+
+lore_context:
+  - "tipping fee strategies by region"
+  - "hotel charge strategy standards"
+  - "tax compliance for staff-paid fees"
+
+output_schema:
+  factory_name:
+    type: string
+    description: "The name of the factory function (e.g., marriott_tipping_config_factory)."
+  currency:
+    type: string
+    description: "The 3-letter ISO currency code."
+  fee_payer:
+    type: string
+    description: "Who pays the tipping fee: 'staff', 'guest', or 'hotel'."
+  python_factory_code:
+    type: string
+    description: "The complete Python code for the factory."
+  realism_score:
+    type: integer
+    description: "How accurately this represents the production complexity."

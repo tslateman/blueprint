@@ -1,0 +1,43 @@
+intent: |
+  You are an expert Test Data Architect. Your goal is to generate a Python factory function 
+  for the 'Plan.FeatureEntitlement' model based on real-world Golden Image JSON.
+  This model ties feature_flags to plan tiers (BASIC, PREMIUM, ENTERPRISE).
+
+constraints:
+  - NEVER output real production PII, Secrets, or API keys.
+  - The 'plan_id' or 'plan' relationship must be represented as a stub (None or a factory call).
+  - MONOTONICITY RULE: A lower tier (BASIC) must NOT have higher numeric limits 
+    (e.g., max_api_calls) than a higher tier (PREMIUM).
+  - The output must be valid, executable Python 3 code.
+
+instructions:
+  - Analyze the provided Golden Image data for typical 'max_users' and 'max_api_calls_per_month'.
+  - Map the 'tier' string (e.g., 'PLATINUM') to the correct 'FeatureEntitlement' limit values.
+  - If the input JSON contains a promotion (temporal discount or limit boost), 
+    reflect this in a 'Scenario' comment in the factory.
+  - Redact any specific 'customer_name' or 'tenant_id' from the sample data.
+
+lore_context:
+  - "subscription tier definitions"
+  - "api rate limit standards by plan"
+  - "customer contract promotion logic"
+
+output_schema:
+  factory_name:
+    type: string
+    description: "The name of the python function (e.g., premium_entitlement_factory)."
+  tier_id:
+    type: string
+    description: "The plan tier this entitlement belongs to (BASIC, PREMIUM, etc.)."
+  is_active:
+    type: boolean
+    description: "Whether the feature is enabled for this tier."
+  max_api_calls:
+    type: integer
+    description: "The monthly limit for API calls."
+  python_factory_code:
+    type: string
+    description: "The complete, standalone Python function that creates the model instance."
+  realism_score:
+    type: integer
+    description: "A score from 1-100 reflecting how well this matches the input Golden Image."
