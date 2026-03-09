@@ -1,0 +1,7 @@
+triggers:
+  - type: file
+    path: inbox/fleet
+    extension: .yaml
+    action: fleet
+    outbox: outbox/fleet
+    runtime: local

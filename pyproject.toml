@@ -1,5 +1,5 @@
 [project]
-name = "shuru-blueprint"
+name = "blueprint"
 version = "0.1.0"
 description = "Spec-driven LLM agent framework with structured enforcement, Lore memory integration, and secure sandbox execution."
 readme = "README.md"
