@@ -102,7 +102,9 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
         "team": None,
         "tasks_created": 0,
         "tasks_driven": 0,
+        "tasks_reviewed": 0,
         "task_ids": {},
+        "review_verdicts": {},
         "errors": [],
     }
 
@@ -225,6 +227,69 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
 
         result["tasks_driven"] += 1
 
+    # 6. Review driven tasks via Reck judgment layer
+    reck_dir = os.environ.get("RECK_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "reck"))
+    for task in sorted_tasks:
+        if task.get("depends_on"):
+            continue
+        task_id = result["task_ids"].get(task["name"])
+        if not task_id:
+            continue
+
+        # Build the result path: look for the drive output in the outbox
+        agent_name = task.get("agent_type", "builder")
+        result_file = _find_result_file(outbox, task_id)
+        if not result_file:
+            logger.info("No result file for task '%s', skipping review", task["name"])
+            continue
+
+        review_args = [
+            "review",
+            task_id,
+            "--agent",
+            agent_name,
+            "--result",
+            result_file,
+            "--json",
+        ]
+
+        reck_dir_resolved = os.path.abspath(reck_dir)
+        if os.path.isdir(reck_dir_resolved):
+            review_args += ["--reck-dir", reck_dir_resolved]
+
+        try:
+            r = _run_fl(review_args)
+        except subprocess.TimeoutExpired:
+            result["errors"].append(
+                f"fl review timed out for '{task['name']}' ({task_id})"
+            )
+            continue
+
+        # Parse review verdict from JSON output
+        try:
+            review_data = json.loads(r.stdout)
+            verdict = review_data.get("verdict", {})
+            result["review_verdicts"][task["name"]] = {
+                "verdict": verdict.get("verdict", "UNKNOWN") if isinstance(verdict, dict) else "UNKNOWN",
+                "confidence": verdict.get("confidence", 0.0) if isinstance(verdict, dict) else 0.0,
+                "transitioned_to": review_data.get("transitioned_to"),
+            }
+            if review_data.get("ok"):
+                result["tasks_reviewed"] += 1
+            else:
+                err_detail = review_data.get("error", {})
+                err_msg = err_detail.get("message", r.stderr.strip()) if isinstance(err_detail, dict) else r.stderr.strip()
+                result["errors"].append(
+                    f"fl review failed for '{task['name']}' ({task_id}): {err_msg}"
+                )
+        except (json.JSONDecodeError, TypeError):
+            if r.returncode != 0:
+                result["errors"].append(
+                    f"fl review failed for '{task['name']}' ({task_id}): {r.stderr.strip()}"
+                )
+            else:
+                result["tasks_reviewed"] += 1
+
     # 6. Determine success and write result
     result["ok"] = result["tasks_created"] == len(sorted_tasks) and not result["errors"]
 
@@ -240,6 +305,21 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
         )
 
     return result
+
+
+def _find_result_file(outbox: str, task_id: str) -> str | None:
+    """Find the most recent result file for a task in the outbox directory."""
+    if not os.path.isdir(outbox):
+        return None
+    candidates = []
+    for fname in os.listdir(outbox):
+        if task_id in fname and (fname.endswith(".json") or fname.endswith(".yaml")):
+            candidates.append(os.path.join(outbox, fname))
+    if not candidates:
+        return None
+    # Return the most recently modified file
+    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return candidates[0]
 
 
 def _write_result(outbox: str, trigger_filename: str, result: dict) -> None:
