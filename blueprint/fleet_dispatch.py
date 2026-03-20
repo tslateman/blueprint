@@ -369,3 +369,46 @@ def _lore_error(msg: str) -> None:
         )
     except Exception:
         logger.debug("lore capture failed (non-fatal)")
+
+
+def dispatch_fleet_with_watch(
+    payload_path: str,
+    outbox: str,
+    default_runtime: str,
+    watch: bool = False,
+    poll_interval: float = 30.0,
+) -> dict:
+    """Dispatch a fleet and optionally watch for dependent task completion.
+
+    Wraps dispatch_fleet(). When watch=True and the payload contains tasks with
+    depends_on, creates a FleetWatcher to poll and drive dependent tasks.
+    """
+    # Parse payload to get sorted tasks for the watcher
+    with open(payload_path, "r") as f:
+        payload = yaml.safe_load(f)
+
+    result = dispatch_fleet(payload_path, outbox, default_runtime)
+
+    if not watch or not result.get("ok"):
+        return result
+
+    # Check if there are any dependent tasks
+    tasks = payload.get("tasks", [])
+    has_dependents = any(t.get("depends_on") for t in tasks)
+    if not has_dependents:
+        return result
+
+    from blueprint.fleet_watcher import FleetWatcher
+
+    sorted_tasks = topo_sort(tasks)
+    runtime = payload.get("runtime", default_runtime)
+
+    watcher = FleetWatcher(
+        dispatch_result=result,
+        sorted_tasks=sorted_tasks,
+        outbox=outbox,
+        runtime=runtime,
+        poll_interval=poll_interval,
+    )
+
+    return watcher.watch()

@@ -24,6 +24,7 @@ This roadmap outlines the evolution of Blueprint into a platform for building, e
 - [x] **Cross-Agent Hand-off**: Fleet dispatch delegates to specialist sub-agents via Shipyard's `fl` CLI, with topological task ordering and dependency resolution.
 - [x] **Agent Registry**: A centralized service discovery for specialized blueprints (The "Agent Team").
 - [x] **Fleet Dispatch + Reck Review**: Multi-agent task execution through Shipyard with a Reck judgment layer that reviews output quality after each dispatch.
+- [x] **Fleet Watcher**: Automated dependency-chain polling that drives dependent tasks as prerequisites complete, with failure cascading.
 
 ---
 
@@ -46,6 +47,7 @@ This roadmap outlines the evolution of Blueprint into a platform for building, e
 - [ ] **Agent Tracing & Journaling**: Record thoughts, lore recall, and sandbox commands into a searchable audit trail (The "Black Box").
 - [ ] **Cross-Agent Message Bus**: Enable agents to route their outputs as triggers for other specialists in the team.
 - [ ] **Semantic Mutation Testing**: Automated "Red-Teaming" of agent constraints using an `LLMJudge`.
+- [ ] **Cron Timer Expressions**: Full cron syntax support for timer triggers (currently interval-only).
 
 ---
 

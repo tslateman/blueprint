@@ -32,6 +32,46 @@ class SpecParser:
                 if invalid:
                     raise ValueError(f"Unknown trigger action(s): {invalid}")
 
+                # Validate timer triggers
+                for trigger in spec["triggers"]:
+                    ttype = trigger.get("type", "file")
+                    if ttype not in ("file", "timer"):
+                        raise ValueError(f"Unknown trigger type: '{ttype}'")
+
+                    if ttype == "timer":
+                        has_interval = "interval" in trigger
+                        has_cron = "cron" in trigger
+
+                        if has_cron:
+                            raise NotImplementedError(
+                                "Cron expressions are not yet supported"
+                            )
+                        if not has_interval and not has_cron:
+                            raise ValueError(
+                                "Timer trigger requires 'interval' or 'cron'"
+                            )
+                        if has_interval and has_cron:
+                            raise ValueError(
+                                "Timer trigger cannot have both 'interval' and 'cron'"
+                            )
+                        if has_interval and (
+                            not isinstance(trigger["interval"], (int, float))
+                            or trigger["interval"] <= 0
+                        ):
+                            raise ValueError(
+                                "Timer 'interval' must be a positive number (seconds)"
+                            )
+
+                        action = trigger.get("action", "enforcer")
+                        if action == "enforcer" and "input" not in trigger:
+                            raise ValueError(
+                                "Timer trigger with action 'enforcer' requires 'input'"
+                            )
+                        if action == "fleet" and "payload_path" not in trigger:
+                            raise ValueError(
+                                "Timer trigger with action 'fleet' requires 'payload_path'"
+                            )
+
                 # Only require intent/output_schema for enforcer or triggerless specs
                 needs_llm = "enforcer" in actions or not spec["triggers"]
                 if needs_llm:

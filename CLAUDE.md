@@ -13,7 +13,7 @@ Spec-driven LLM agent framework. Pipeline: YAML spec → parser → compiler →
 
 ## Architecture
 
-- `blueprint/` — core framework (parser, compiler, enforcer, evaluator, orchestrator, guardian, registry, fleet_dispatch)
+- `blueprint/` — core framework (parser, compiler, enforcer, evaluator, orchestrator, guardian, registry, fleet_dispatch, fleet_watcher)
 - `vault/` — Shuru sandbox execution (tool_router, sandbox)
 - `blueprints/` — YAML spec definitions (factory_generator, meta)
 - `evals/` — golden case definitions
@@ -26,6 +26,8 @@ Spec-driven LLM agent framework. Pipeline: YAML spec → parser → compiler →
 - YAML specs define agent behavior — see `demo_spec.yaml` for the canonical example
 - Fleet dispatch bridges to Shipyard (`fl` CLI) — see `blueprint/fleet_dispatch.py`
 - Reck review runs after fleet drive for quality judgment
+- Timer triggers fire actions on a recurring interval — `type: timer` with `interval` in spec triggers
+- Fleet watcher polls driven tasks and drives dependents as prerequisites complete — see `blueprint/fleet_watcher.py`
 - Multi-provider fallback: Gemini → OpenAI → Anthropic
 - Lore integration: `lore_context` in specs triggers automatic memory hydration
 - Python 3.12+, dependencies managed via `uv`

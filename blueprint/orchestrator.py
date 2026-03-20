@@ -3,7 +3,10 @@ Blueprint Orchestrator
 Listens for events defined in Blueprints and triggers executions.
 """
 
+import json
+import logging
 import os
+import threading
 from pathlib import Path
 from typing import Dict, Any, List
 from watchdog.observers import Observer
@@ -13,6 +16,8 @@ from blueprint.parser import SpecParser
 from blueprint.compiler import BlueprintCompiler
 from blueprint.enforcer import SchemaEnforcer
 from blueprint.fleet_dispatch import dispatch_fleet
+
+logger = logging.getLogger(__name__)
 
 
 class BlueprintFileSystemHandler(FileSystemEventHandler):
@@ -73,6 +78,8 @@ class BlueprintFleetHandler(FileSystemEventHandler):
         self.extension = trigger_config.get("extension", ".yaml")
         self.outbox = trigger_config.get("outbox", "outbox/fleet")
         self.runtime = trigger_config.get("runtime", "local")
+        self.watch = trigger_config.get("watch", False)
+        self.poll_interval = trigger_config.get("poll_interval", 30.0)
         os.makedirs(self.path, exist_ok=True)
         os.makedirs(self.outbox, exist_ok=True)
 
@@ -80,12 +87,93 @@ class BlueprintFleetHandler(FileSystemEventHandler):
         if event.is_directory or not event.src_path.endswith(self.extension):
             return
         print(f"[FLEET] Dispatch triggered: {event.src_path}")
-        result = dispatch_fleet(event.src_path, self.outbox, self.runtime)
+        if self.watch:
+            from blueprint.fleet_dispatch import dispatch_fleet_with_watch
+
+            result = dispatch_fleet_with_watch(
+                event.src_path,
+                self.outbox,
+                self.runtime,
+                watch=True,
+                poll_interval=self.poll_interval,
+            )
+        else:
+            result = dispatch_fleet(event.src_path, self.outbox, self.runtime)
         status = "OK" if result.get("ok") else "FAILED"
         print(
             f"[FLEET] {status}: team={result.get('team')}, "
             f"tasks={result.get('tasks_created', 0)}"
         )
+
+
+class BlueprintTimerHandler:
+    """Fires actions on a recurring interval."""
+
+    def __init__(self, spec: dict, trigger_config: dict, interval: float):
+        self.spec = spec
+        self.trigger_config = trigger_config
+        self.interval = interval
+        self.action = trigger_config.get("action", "enforcer")
+        self.outbox = trigger_config.get("outbox", "outbox")
+        os.makedirs(self.outbox, exist_ok=True)
+
+        self._stop_event = threading.Event()
+        self._thread = None
+
+        if self.action == "enforcer":
+            self.enforcer = SchemaEnforcer(
+                use_cli=(os.environ.get("USE_GEMINI_CLI", "").lower() == "true")
+            )
+            self.system_prompt = BlueprintCompiler.compile_prompt(self.spec)
+            self.ResponseModel = BlueprintCompiler.compile_schema(self.spec)
+            self.input_text = trigger_config["input"]
+        elif self.action == "fleet":
+            self.payload_path = trigger_config["payload_path"]
+            self.runtime = trigger_config.get("runtime", "local")
+
+    def start(self):
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        while not self._stop_event.wait(self.interval):
+            try:
+                self._fire()
+            except Exception as e:
+                logger.error("[TIMER] Action failed: %s", e)
+
+    def _fire(self):
+        if self.action == "enforcer":
+            self._fire_enforcer()
+        elif self.action == "fleet":
+            self._fire_fleet()
+
+    def _fire_enforcer(self):
+        result = self.enforcer.generate(
+            self.system_prompt, self.input_text, self.ResponseModel
+        )
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        output_path = os.path.join(self.outbox, f"timer_{ts}_result.json")
+        with open(output_path, "w") as f:
+            f.write(result.model_dump_json(indent=2))
+        logger.info("[TIMER] Enforcer result written to %s", output_path)
+
+    def _fire_fleet(self):
+        result = dispatch_fleet(self.payload_path, self.outbox, self.runtime)
+        status = "OK" if result.get("ok") else "FAILED"
+        logger.info(
+            "[TIMER] Fleet dispatch %s: team=%s, tasks=%d",
+            status,
+            result.get("team"),
+            result.get("tasks_created", 0),
+        )
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
 
 
 class BlueprintOrchestrator:
@@ -95,14 +183,28 @@ class BlueprintOrchestrator:
         self.blueprint_paths = blueprint_paths
         self.observer = Observer()
         self._handlers = []
+        self._timers: list = []
 
     def start(self):
         """Analyzes blueprints and starts the appropriate observers."""
         for path in self.blueprint_paths:
             spec = SpecParser.parse_yaml(path)
             for trigger in spec.get("triggers", []):
+                ttype = trigger.get("type", "file")
                 action = trigger.get("action", "enforcer")
 
+                if ttype == "timer":
+                    interval = trigger["interval"]
+                    print(
+                        f"[INIT] Setting up timer trigger "
+                        f"(every {interval}s) for {path}..."
+                    )
+                    timer = BlueprintTimerHandler(spec, trigger, interval)
+                    timer.start()
+                    self._timers.append(timer)
+                    continue
+
+                # File-based triggers
                 if action == "enforcer":
                     print(f"[INIT] Setting up file-system trigger for {path}...")
                     handler = BlueprintFileSystemHandler(spec, trigger)
@@ -118,12 +220,19 @@ class BlueprintOrchestrator:
 
         if self._handlers:
             self.observer.start()
-            print(
-                f"[READY] Background Orchestrator running with {len(self._handlers)} listeners."
-            )
+
+        if self._handlers or self._timers:
+            parts = []
+            if self._handlers:
+                parts.append(f"{len(self._handlers)} listeners")
+            if self._timers:
+                parts.append(f"{len(self._timers)} timers")
+            print(f"[READY] Background Orchestrator running with {', '.join(parts)}.")
         else:
             print("[INFO] No active triggers found in blueprints.")
 
     def stop(self):
+        for timer in self._timers:
+            timer.stop()
         self.observer.stop()
         self.observer.join()
