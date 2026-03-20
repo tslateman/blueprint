@@ -92,18 +92,18 @@ class EvaluatorHarness:
             return EvalResult(passed=False, reason=f"Field '{field}' did not contain '{expected}'. Current: {val}")
 
         elif a_type == "field_range":
-            val = getattr(output, assertion.get("field"), None)
+            val = output.get(field)
             min_val = assertion.get("min")
             max_val = assertion.get("max")
+            if val is None:
+                return EvalResult(passed=False, reason=f"Field '{field}' is missing or None")
             passed = True
             if min_val is not None and val < min_val:
                 passed = False
             if max_val is not None and val > max_val:
                 passed = False
-            field = assertion.get("field")
             range_str = f"[{min_val if min_val is not None else '-∞'}, {max_val if max_val is not None else '+∞'}]"
-            reason = f"{field}={val} {'within' if passed else 'outside'} {range_str}"
-            return EvalResult(passed=passed, reason=reason)
+            return EvalResult(passed=passed, reason=f"{field}={val} {'within' if passed else 'outside'} {range_str}")
 
         elif a_type == "semantic":
             return self.judge.evaluate(output, assertion['prompt'])

@@ -1,14 +1,16 @@
 # Blueprint
 
-Blueprint is a framework for enforcing structured intent and dynamic schemas in LLM interactions. It uses a YAML-based specification to compile system prompts, Pydantic schemas, and execution logic, integrated with long-term memory and secure sandboxing.
+Blueprint is a spec-driven framework for building, enforcing, and automating LLM agent workflows. YAML specifications compile into system prompts, Pydantic schemas, and execution logic, integrated with long-term memory, secure sandboxing, and autonomous orchestration.
 
 ## Core Pillars
 
 1.  **Spec-Driven Intent**: Define agent behavior and constraints in YAML.
 2.  **Dynamic Enforcement**: Compile specs into Pydantic models via `instructor`.
-3.  **Secure Execution (Vault)**: Run generated code in a Zero-Trust sandbox using `shuru`.
-4.  **Long-Term Memory (Lore)**: Hydrate prompts with project-specific context via `lore`.
-5.  **Continuous Evals**: A built-in semantic evaluation harness to prevent regressions.
+3.  **Multi-Provider Fallback**: Enforce schemas across Gemini, OpenAI, and Anthropic with automatic provider failover.
+4.  **Secure Execution (Vault)**: Run generated code in a Zero-Trust sandbox using `shuru`.
+5.  **Long-Term Memory (Lore)**: Hydrate prompts with project-specific context via `lore`.
+6.  **Autonomous Orchestration**: Event-driven triggers, fleet dispatch, and self-healing guardian processes.
+7.  **Continuous Evals**: A built-in semantic evaluation harness to prevent regressions.
 
 ---
 
@@ -87,17 +89,68 @@ Blueprint treats "AI prompts as software." We use a "Golden Case" model to verif
       prompt: "The output should accurately reflect the user's origin."
 ```
 
+### 5. Orchestrator (Event-Driven Triggers)
+
+The `BlueprintOrchestrator` watches for filesystem events and dispatches blueprint executions. Define `triggers` in a blueprint spec to react when files arrive in a watched directory:
+
+```yaml
+triggers:
+  - type: filesystem
+    path: inbox
+    extension: .txt
+    outbox: outbox
+```
+
+Run the orchestrator:
+
+```bash
+just orchestrate
+```
+
+The orchestrator compiles the blueprint once, then processes each incoming file against the spec. Results checkpoint to the outbox.
+
+### 6. Guardian (Self-Healing Daemon)
+
+The `BlueprintGuardian` extends the orchestrator with periodic health checks and drift detection. It audits blueprint specs on a configurable interval and triggers self-healing remediations when it finds mismatches between specs and implementation.
+
+```bash
+just guard       # Start the guardian daemon
+just heal-demo   # Run a self-healing demonstration
+```
+
+### 7. Fleet Dispatch (Shipyard Integration)
+
+Fleet dispatch bridges Blueprint to Shipyard's `fl` CLI for multi-agent task execution. A fleet dispatch YAML payload defines a team of specialist sub-agents with dependency ordering:
+
+```yaml
+team: my-fleet
+tasks:
+  - name: analyze
+    title: "Analyze data"
+    agent_type: researcher
+  - name: report
+    title: "Write report"
+    agent_type: writer
+    depends_on: [analyze]
+```
+
+Fleet dispatch topologically sorts tasks by `depends_on`, drives independent tasks in parallel, and runs a Reck review step to judge output quality after each dispatch.
+
 ---
 
 ## CLI Reference
 
-| Command        | Description                                           |
-| :------------- | :---------------------------------------------------- |
-| `just install` | Sync dependencies via `uv`.                           |
-| `just run`     | Execute the main demo (`main.py`).                    |
-| `just test`    | Run all unit tests (Parser, Compiler, Sandbox).       |
-| `just eval`    | Run semantic evaluations using the Gemini CLI engine. |
-| `just clean`   | Clear caches and temporary files.                     |
+| Command            | Description                                            |
+| :----------------- | :----------------------------------------------------- |
+| `just install`     | Sync dependencies via `uv`.                            |
+| `just run`         | Execute the main demo (`main.py`).                     |
+| `just test`        | Run all unit tests (Parser, Compiler, Sandbox, Fleet). |
+| `just eval`        | Run semantic evaluations using the Gemini CLI engine.  |
+| `just eval-api`    | Run semantic evaluations via direct API.               |
+| `just orchestrate` | Start the event-driven orchestrator.                   |
+| `just guard`       | Start the guardian daemon with drift detection.        |
+| `just heal-demo`   | Run a self-healing demonstration.                      |
+| `just clean`       | Clear caches and temporary files.                      |
 
 ## Examples
 

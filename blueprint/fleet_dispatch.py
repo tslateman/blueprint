@@ -290,12 +290,12 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
             else:
                 result["tasks_reviewed"] += 1
 
-    # 6. Determine success and write result
+    # 7. Determine success and write result
     result["ok"] = result["tasks_created"] == len(sorted_tasks) and not result["errors"]
 
     _write_result(outbox, filename, result)
 
-    # 7. Capture to lore
+    # 8. Capture to lore
     if result["ok"]:
         _lore_success(team, result["tasks_created"], filename)
     else:

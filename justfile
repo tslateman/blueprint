@@ -12,11 +12,11 @@ run:
 
 # Run all tests via pytest
 test:
-    uv run pytest test_blueprint.py test_sandbox.py test_lore_integration.py -v
+    uv run pytest tests/ -v
 
 # Run the semantic evaluation suite via headless Gemini CLI (Default)
 eval:
-    USE_GEMINI_CLI=true uv run pytest test_evals.py
+    USE_GEMINI_CLI=true uv run pytest tests/test_evals.py
 
 # Run the background orchestrator based on blueprint triggers (Agent Team)
 orchestrate:
@@ -32,7 +32,7 @@ heal-demo:
 
 # Run the semantic evaluation suite via direct API
 eval-api:
-    uv run pytest test_evals.py
+    uv run pytest tests/test_evals.py
 
 # Remove cache files and temporary data
 clean:

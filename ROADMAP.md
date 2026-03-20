@@ -20,9 +20,10 @@ This roadmap outlines the evolution of Blueprint into a platform for building, e
 **Goal**: Move from transient executions to long-running, event-aware agent swarms.
 
 - [x] **Event-Driven Triggers**: Implement a `triggers:` spec to handle File System, Webhook, and Timer events.
-- [ ] **State Persistence**: Create a `vault/persistence.py` layer to allow agents to checkpoint and resume long-running tasks.
-- [ ] **Cross-Agent Hand-off**: Define a protocol for one blueprint to "spawn" or "delegate" to another specialist sub-agent.
+- [x] **State Persistence**: The orchestrator and fleet dispatch checkpoint results to the outbox, enabling agents to resume from prior state.
+- [x] **Cross-Agent Hand-off**: Fleet dispatch delegates to specialist sub-agents via Shipyard's `fl` CLI, with topological task ordering and dependency resolution.
 - [x] **Agent Registry**: A centralized service discovery for specialized blueprints (The "Agent Team").
+- [x] **Fleet Dispatch + Reck Review**: Multi-agent task execution through Shipyard with a Reck judgment layer that reviews output quality after each dispatch.
 
 ---
 
