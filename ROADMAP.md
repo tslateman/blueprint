@@ -44,7 +44,7 @@ This roadmap outlines the evolution of Blueprint into a platform for building, e
 **Goal**: Scaling to production-ready, safe, and traceable background workflows.
 
 - [ ] **Human-in-the-Loop (HITL) Gates**: Asynchronous "Approval" checkpoints for high-stakes background actions.
-- [ ] **Agent Tracing & Journaling**: Record thoughts, lore recall, and sandbox commands into a searchable audit trail (The "Black Box").
+- [x] **Agent Tracing & Journaling**: Record thoughts, lore recall, and sandbox commands into a searchable audit trail (The "Black Box").
 - [ ] **Cross-Agent Message Bus**: Enable agents to route their outputs as triggers for other specialists in the team.
 - [ ] **Semantic Mutation Testing**: Automated "Red-Teaming" of agent constraints using an `LLMJudge`.
 - [ ] **Cron Timer Expressions**: Full cron syntax support for timer triggers (currently interval-only).
