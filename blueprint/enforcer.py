@@ -9,11 +9,14 @@ import hashlib
 import anthropic
 from openai import OpenAI
 from google import genai
-from typing import Any, Dict, Type, Optional
+from typing import Any, Dict, Type, Optional, TYPE_CHECKING
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from blueprint.compiler import _cmux_progress, _cmux_clear_progress
+
+if TYPE_CHECKING:
+    from blueprint.tracer import TracingCollector
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,7 @@ class SchemaEnforcer:
         user_prompt: str,
         response_model: Type[BaseModel],
         model: Optional[str] = None,
+        tracer: "Optional[TracingCollector]" = None,
     ) -> BaseModel:
         """Generates a structured response strictly enforcing the response_model schema (cached)."""
         model_name = model or getattr(self, "default_model", "gemini-cli")
@@ -165,15 +169,47 @@ class SchemaEnforcer:
                     ],
                 )
                 _cmux_clear_progress()
+                if tracer:
+                    try:
+                        tracer.emit(
+                            "llm_call",
+                            {
+                                "provider": provider_name,
+                                "model": provider_model,
+                                "success": True,
+                            },
+                        )
+                    except Exception:
+                        pass
                 break
             except Exception as e:
                 logger.warning("Provider %s failed: %s — trying next", provider_name, e)
                 tried.append(provider_name)
+                if tracer:
+                    try:
+                        tracer.emit(
+                            "llm_call",
+                            {
+                                "provider": provider_name,
+                                "model": provider_model,
+                                "success": False,
+                                "error": str(e),
+                            },
+                        )
+                    except Exception:
+                        pass
 
         if result is None:
             # All API providers failed — try CLI as final fallback
             if self.use_cli or os.environ.get("USE_GEMINI_CLI"):
                 logger.warning("Falling back to Gemini CLI mode")
+                if tracer:
+                    try:
+                        tracer.emit(
+                            "llm_fallback", {"target": "gemini_cli", "tried": tried}
+                        )
+                    except Exception:
+                        pass
                 result = self._generate_via_cli(
                     system_prompt, user_prompt, response_model
                 )

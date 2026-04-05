@@ -1,7 +1,10 @@
 import os
 import subprocess
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 from pydantic import BaseModel, create_model, Field
+
+if TYPE_CHECKING:
+    from blueprint.tracer import TracingCollector
 
 _CMUX = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 
@@ -30,7 +33,11 @@ class BlueprintCompiler:
     """Compiles a parsed spec into a system prompt and a Pydantic model for structured generation."""
 
     @staticmethod
-    def compile_prompt(spec: Dict[str, Any], lore_resolver=None) -> str:
+    def compile_prompt(
+        spec: Dict[str, Any],
+        lore_resolver=None,
+        tracer: "Optional[TracingCollector]" = None,
+    ) -> str:
         """Constructs the system prompt based on intents, constraints, and instructions."""
         intent = spec.get("intent", "You are a helpful AI assistant.")
         constraints = spec.get("constraints", [])
@@ -83,6 +90,17 @@ class BlueprintCompiler:
             for i, query in enumerate(lore_queries):
                 _cmux_progress((i + 1) / len(lore_queries), f"lore: {query}")
                 result = lore_resolver(query)
+                if tracer:
+                    try:
+                        tracer.emit(
+                            "lore_recall",
+                            {
+                                "query": query,
+                                "result_length": len(result) if result else 0,
+                            },
+                        )
+                    except Exception:
+                        pass
                 if result and (
                     result.lower().startswith("error")
                     or "command not found" in result.lower()
@@ -96,11 +114,22 @@ class BlueprintCompiler:
                     prompt_parts.append(f"### Query: {query}\n```text\n{result}\n```")
             _cmux_clear_progress()
 
+        if tracer:
+            try:
+                tracer.emit(
+                    "prompt_compile",
+                    {"queries": len(lore_queries), "intent": intent[:80]},
+                )
+            except Exception:
+                pass
+
         return "\n".join(prompt_parts)
 
     @staticmethod
     def compile_schema(
-        spec: Dict[str, Any], model_name: str = "DynamicOutput"
+        spec: Dict[str, Any],
+        model_name: str = "DynamicOutput",
+        tracer: "Optional[TracingCollector]" = None,
     ) -> Type[BaseModel]:
         """Creates a dynamic Pydantic model from the 'output_schema' section of the spec."""
         schema_def = spec.get("output_schema")
@@ -141,5 +170,14 @@ class BlueprintCompiler:
                 )
             else:
                 fields[field_name] = (python_type, Field(..., description=description))
+
+        if tracer:
+            try:
+                tracer.emit(
+                    "schema_compile",
+                    {"model_name": model_name, "field_count": len(fields)},
+                )
+            except Exception:
+                pass
 
         return create_model(model_name, **fields)

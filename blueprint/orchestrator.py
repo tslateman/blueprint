@@ -8,7 +8,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -17,15 +17,24 @@ from blueprint.compiler import BlueprintCompiler
 from blueprint.enforcer import SchemaEnforcer
 from blueprint.fleet_dispatch import dispatch_fleet
 
+if TYPE_CHECKING:
+    from blueprint.tracer import TracingCollector
+
 logger = logging.getLogger(__name__)
 
 
 class BlueprintFileSystemHandler(FileSystemEventHandler):
     """Specific handler for file-based triggers in a Blueprint."""
 
-    def __init__(self, spec: Dict[str, Any], trigger_config: Dict[str, Any]):
+    def __init__(
+        self,
+        spec: Dict[str, Any],
+        trigger_config: Dict[str, Any],
+        tracer: "Optional[TracingCollector]" = None,
+    ):
         self.spec = spec
         self.trigger_config = trigger_config
+        self.tracer = tracer
         self.path = trigger_config.get("path", "inbox")
         self.extension = trigger_config.get("extension", ".txt")
         self.outbox = trigger_config.get("outbox", "outbox")
@@ -45,6 +54,18 @@ class BlueprintFileSystemHandler(FileSystemEventHandler):
             return
 
         print(f"[ORCHESTRATOR] Event Triggered: {event.src_path}")
+        if self.tracer:
+            try:
+                self.tracer.emit(
+                    "trigger_fired",
+                    {
+                        "path": event.src_path,
+                        "event_type": "created",
+                        "handler": "file",
+                    },
+                )
+            except Exception:
+                pass
         self.process_event(event.src_path)
 
     def process_event(self, file_path):
@@ -73,7 +94,10 @@ class BlueprintFileSystemHandler(FileSystemEventHandler):
 class BlueprintFleetHandler(FileSystemEventHandler):
     """Watches for fleet dispatch YAML files and provisions Shipyard fleets."""
 
-    def __init__(self, trigger_config: dict):
+    def __init__(
+        self, trigger_config: dict, tracer: "Optional[TracingCollector]" = None
+    ):
+        self.tracer = tracer
         self.path = trigger_config.get("path", "inbox/fleet")
         self.extension = trigger_config.get("extension", ".yaml")
         self.outbox = trigger_config.get("outbox", "outbox/fleet")
@@ -87,6 +111,18 @@ class BlueprintFleetHandler(FileSystemEventHandler):
         if event.is_directory or not event.src_path.endswith(self.extension):
             return
         print(f"[FLEET] Dispatch triggered: {event.src_path}")
+        if self.tracer:
+            try:
+                self.tracer.emit(
+                    "trigger_fired",
+                    {
+                        "path": event.src_path,
+                        "event_type": "created",
+                        "handler": "fleet",
+                    },
+                )
+            except Exception:
+                pass
         if self.watch:
             from blueprint.fleet_dispatch import dispatch_fleet_with_watch
 

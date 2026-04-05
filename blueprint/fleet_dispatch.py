@@ -12,6 +12,10 @@ import subprocess
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from blueprint.tracer import TracingCollector
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +93,12 @@ def _run_fl(args: list[str]) -> subprocess.CompletedProcess:
     )
 
 
-def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict:
+def dispatch_fleet(
+    payload_path: str,
+    outbox: str,
+    default_runtime: str,
+    tracer: "TracingCollector | None" = None,
+) -> dict:
     """
     Parse a fleet dispatch YAML file, provision the team and tasks via
     Shipyard's `fl` CLI, drive independent tasks, and write results to outbox.
@@ -122,6 +131,19 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
     team = payload["team"]
     runtime = payload.get("runtime", default_runtime)
     result["team"] = team
+
+    if tracer:
+        try:
+            tracer.emit(
+                "fleet_dispatch",
+                {
+                    "team": team,
+                    "task_count": len(payload.get("tasks", [])),
+                    "phase": "start",
+                },
+            )
+        except Exception:
+            pass
 
     # 2. Topological sort
     try:
@@ -228,7 +250,10 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
         result["tasks_driven"] += 1
 
     # 6. Review driven tasks via Reck judgment layer
-    reck_dir = os.environ.get("RECK_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "reck"))
+    reck_dir = os.environ.get(
+        "RECK_DIR",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "reck"),
+    )
     for task in sorted_tasks:
         if task.get("depends_on"):
             continue
@@ -270,15 +295,23 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
             review_data = json.loads(r.stdout)
             verdict = review_data.get("verdict", {})
             result["review_verdicts"][task["name"]] = {
-                "verdict": verdict.get("verdict", "UNKNOWN") if isinstance(verdict, dict) else "UNKNOWN",
-                "confidence": verdict.get("confidence", 0.0) if isinstance(verdict, dict) else 0.0,
+                "verdict": verdict.get("verdict", "UNKNOWN")
+                if isinstance(verdict, dict)
+                else "UNKNOWN",
+                "confidence": verdict.get("confidence", 0.0)
+                if isinstance(verdict, dict)
+                else 0.0,
                 "transitioned_to": review_data.get("transitioned_to"),
             }
             if review_data.get("ok"):
                 result["tasks_reviewed"] += 1
             else:
                 err_detail = review_data.get("error", {})
-                err_msg = err_detail.get("message", r.stderr.strip()) if isinstance(err_detail, dict) else r.stderr.strip()
+                err_msg = (
+                    err_detail.get("message", r.stderr.strip())
+                    if isinstance(err_detail, dict)
+                    else r.stderr.strip()
+                )
                 result["errors"].append(
                     f"fl review failed for '{task['name']}' ({task_id}): {err_msg}"
                 )
@@ -292,6 +325,21 @@ def dispatch_fleet(payload_path: str, outbox: str, default_runtime: str) -> dict
 
     # 7. Determine success and write result
     result["ok"] = result["tasks_created"] == len(sorted_tasks) and not result["errors"]
+
+    if tracer:
+        try:
+            tracer.emit(
+                "fleet_dispatch",
+                {
+                    "team": team,
+                    "phase": "end",
+                    "ok": result["ok"],
+                    "tasks_created": result["tasks_created"],
+                    "tasks_driven": result["tasks_driven"],
+                },
+            )
+        except Exception:
+            pass
 
     _write_result(outbox, filename, result)
 
