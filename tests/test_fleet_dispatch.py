@@ -14,7 +14,12 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from blueprint.fleet_dispatch import dispatch_fleet, topo_sort, validate_payload
+from blueprint.fleet_dispatch import (
+    dispatch_fleet,
+    halt_fleet,
+    topo_sort,
+    validate_payload,
+)
 from blueprint.parser import SpecParser
 
 
@@ -48,7 +53,24 @@ def _ok_result(args, **_kwargs):
             stdout=json.dumps({"task_id": f"task-{name}-001", "ok": True}),
             stderr="",
         )
-    # team create or drive
+    # team create
+    if "team" in args and "create" in args:
+        return subprocess.CompletedProcess(
+            args=args, returncode=0, stdout="{}", stderr=""
+        )
+    # drive -- return a run_id
+    if args[0] == "fl" and len(args) > 1 and args[1] == "drive":
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=json.dumps({"run_id": "run-001", "ok": True}),
+            stderr="",
+        )
+    # audit show -- return empty entries by default
+    if "audit" in args and "show" in args:
+        return subprocess.CompletedProcess(
+            args=args, returncode=0, stdout="[]", stderr=""
+        )
     return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}", stderr="")
 
 
@@ -330,11 +352,132 @@ class TestDispatchFleet:
         assert "tasks_driven" in written
         assert "task_ids" in written
         assert "errors" in written
+        assert "audit" in written
         assert written["ok"] is True
 
 
 # ===========================================================================
-# 4. Parser validation
+# 4. Shipyard audit trail
+# ===========================================================================
+
+
+class TestAuditTrail:
+    def test_audit_fetched_when_drive_returns_run_id(self, tmp_path):
+        """When fl drive returns a run_id, audit entries are fetched and included."""
+        audit_entries = [
+            {"event": "task_started", "ts": "2026-04-04T00:00:00Z"},
+            {"event": "task_completed", "ts": "2026-04-04T00:01:00Z"},
+        ]
+
+        def mock_with_audit(args, **_kw):
+            if "audit" in args and "show" in args:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(audit_entries),
+                    stderr="",
+                )
+            return _ok_result(args)
+
+        with patch(
+            "blueprint.fleet_dispatch.subprocess.run", side_effect=mock_with_audit
+        ):
+            path = _write_payload(tmp_path, _make_payload())
+            outbox = str(tmp_path / "outbox")
+
+            result = dispatch_fleet(path, outbox, "local")
+
+        assert result["tasks_driven"] == 2
+        assert len(result["audit"]) == 4  # 2 entries per drive x 2 drives
+        assert result["audit"][0]["event"] == "task_started"
+
+    def test_audit_appears_in_result_yaml(self, tmp_path):
+        """Audit entries are serialized into the outbox result YAML."""
+        audit_entries = [{"event": "task_started"}]
+
+        def mock_with_audit(args, **_kw):
+            if "audit" in args and "show" in args:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps(audit_entries),
+                    stderr="",
+                )
+            return _ok_result(args)
+
+        with patch(
+            "blueprint.fleet_dispatch.subprocess.run", side_effect=mock_with_audit
+        ):
+            path = _write_payload(tmp_path, _make_payload())
+            outbox = str(tmp_path / "outbox")
+
+            dispatch_fleet(path, outbox, "local")
+
+        result_files = list((tmp_path / "outbox").glob("*_result.yaml"))
+        assert len(result_files) == 1
+        with open(result_files[0]) as f:
+            written = yaml.safe_load(f)
+        assert "audit" in written
+        assert len(written["audit"]) >= 1
+        assert written["audit"][0]["event"] == "task_started"
+
+    def test_audit_fail_open(self, tmp_path):
+        """When fl audit fails, dispatch still succeeds with empty audit."""
+
+        def mock_audit_fails(args, **_kw):
+            if "audit" in args and "show" in args:
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="audit service unavailable",
+                )
+            return _ok_result(args)
+
+        with patch(
+            "blueprint.fleet_dispatch.subprocess.run", side_effect=mock_audit_fails
+        ):
+            path = _write_payload(tmp_path, _make_payload())
+            outbox = str(tmp_path / "outbox")
+
+            result = dispatch_fleet(path, outbox, "local")
+
+        assert result["ok"] is True
+        assert result["tasks_driven"] == 2
+        assert result["audit"] == []
+
+    def test_no_audit_when_drive_has_no_run_id(self, tmp_path):
+        """When fl drive stdout lacks a run_id, no audit fetch is attempted."""
+        call_log = []
+
+        def mock_no_run_id(args, **_kw):
+            call_log.append(args)
+            if args[0] == "fl" and len(args) > 1 and args[1] == "drive":
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout="{}",  # no run_id
+                    stderr="",
+                )
+            return _ok_result(args)
+
+        with patch(
+            "blueprint.fleet_dispatch.subprocess.run", side_effect=mock_no_run_id
+        ):
+            path = _write_payload(tmp_path, _make_payload())
+            outbox = str(tmp_path / "outbox")
+
+            result = dispatch_fleet(path, outbox, "local")
+
+        assert result["tasks_driven"] == 2
+        assert result["audit"] == []
+        # Verify no audit calls were made
+        audit_calls = [c for c in call_log if "audit" in c]
+        assert len(audit_calls) == 0
+
+
+# ===========================================================================
+# 5. Parser validation
 # ===========================================================================
 
 
@@ -393,7 +536,7 @@ class TestParserValidation:
 
 
 # ===========================================================================
-# 5. Orchestrator routing
+# 6. Orchestrator routing
 # ===========================================================================
 
 
@@ -490,3 +633,69 @@ class TestOrchestratorRouting:
 
         assert len(orch._handlers) == 1
         assert isinstance(orch._handlers[0], BlueprintFileSystemHandler)
+
+
+# ===========================================================================
+# 6. Fleet halt
+# ===========================================================================
+
+
+class TestHaltFleet:
+    @patch("blueprint.fleet_dispatch.subprocess.run")
+    def test_halt_all(self, mock_run):
+        """halt_fleet() calls fl halt --all."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["fl", "halt", "--all"],
+            returncode=0,
+            stdout="halted 3 agents",
+            stderr="",
+        )
+        result = halt_fleet()
+        assert result["ok"] is True
+        assert result["output"] == "halted 3 agents"
+        mock_run.assert_called_once_with(
+            ["fl", "halt", "--all"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    @patch("blueprint.fleet_dispatch.subprocess.run")
+    def test_halt_specific_task(self, mock_run):
+        """halt_fleet('task-123') passes the task_id to fl halt."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["fl", "halt", "task-123"],
+            returncode=0,
+            stdout="halted task-123",
+            stderr="",
+        )
+        result = halt_fleet("task-123")
+        assert result["ok"] is True
+        assert result["output"] == "halted task-123"
+        mock_run.assert_called_once_with(
+            ["fl", "halt", "task-123"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    @patch("blueprint.fleet_dispatch.subprocess.run")
+    def test_halt_timeout_returns_error(self, mock_run):
+        """Timeout returns error dict."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="fl", timeout=30)
+        result = halt_fleet()
+        assert result["ok"] is False
+        assert result["error"] == "halt timed out"
+
+    @patch("blueprint.fleet_dispatch.subprocess.run")
+    def test_halt_failure_returns_error(self, mock_run):
+        """Non-zero exit returns error dict with stderr."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["fl", "halt", "--all"],
+            returncode=1,
+            stdout="",
+            stderr="no agents running",
+        )
+        result = halt_fleet()
+        assert result["ok"] is False
+        assert result["error"] == "no agents running"

@@ -7,6 +7,7 @@ and cascades failures through the dependency graph.
 import json
 import logging
 import os
+import subprocess
 import threading
 from collections import deque
 from pathlib import Path
@@ -85,6 +86,51 @@ class FleetWatcher:
         """Signal the watcher to stop."""
         self._stop_event.set()
 
+    def halt(self, task_name: str | None = None) -> dict:
+        """Halt dispatched agents via Shipyard's fl halt.
+
+        Args:
+            task_name: If given, halt the specific task. If None, halt all.
+
+        Returns:
+            dict with ok, halted count, and errors list.
+        """
+        result = {"ok": True, "halted": 0, "errors": []}
+
+        if task_name is None:
+            try:
+                r = _run_fl(["halt", "--all"])
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "halted": 0, "errors": ["halt --all timed out"]}
+            if r.returncode == 0:
+                result["halted"] = len(self._driven - self._completed - self._failed)
+            else:
+                result["ok"] = False
+                result["errors"].append(r.stderr.strip())
+        else:
+            task_id = self._task_ids.get(task_name)
+            if not task_id:
+                return {
+                    "ok": False,
+                    "halted": 0,
+                    "errors": [f"Unknown task name: '{task_name}'"],
+                }
+            try:
+                r = _run_fl(["halt", task_id])
+            except subprocess.TimeoutExpired:
+                return {
+                    "ok": False,
+                    "halted": 0,
+                    "errors": [f"halt timed out for '{task_name}'"],
+                }
+            if r.returncode == 0:
+                result["halted"] = 1
+            else:
+                result["ok"] = False
+                result["errors"].append(r.stderr.strip())
+
+        return result
+
     def _poll_driven_tasks(self):
         """Check status of driven-but-not-completed tasks."""
         to_poll = self._driven - self._completed - self._failed
@@ -142,9 +188,7 @@ class FleetWatcher:
                     continue
 
                 if r.returncode != 0:
-                    logger.error(
-                        "fl drive failed for '%s': %s", name, r.stderr.strip()
-                    )
+                    logger.error("fl drive failed for '%s': %s", name, r.stderr.strip())
                     self._failed.add(name)
                     self._cascade_failure(name)
                     continue
@@ -178,8 +222,10 @@ class FleetWatcher:
         review_args = [
             "review",
             task_id,
-            "--agent", agent_name,
-            "--result", result_file,
+            "--agent",
+            agent_name,
+            "--result",
+            result_file,
             "--json",
         ]
 
@@ -199,8 +245,12 @@ class FleetWatcher:
             review_data = json.loads(r.stdout)
             verdict = review_data.get("verdict", {})
             self.dispatch_result.setdefault("review_verdicts", {})[name] = {
-                "verdict": verdict.get("verdict", "UNKNOWN") if isinstance(verdict, dict) else "UNKNOWN",
-                "confidence": verdict.get("confidence", 0.0) if isinstance(verdict, dict) else 0.0,
+                "verdict": verdict.get("verdict", "UNKNOWN")
+                if isinstance(verdict, dict)
+                else "UNKNOWN",
+                "confidence": verdict.get("confidence", 0.0)
+                if isinstance(verdict, dict)
+                else 0.0,
                 "transitioned_to": review_data.get("transitioned_to"),
             }
             if review_data.get("ok"):
@@ -217,7 +267,9 @@ class FleetWatcher:
 
         # Write incremental result
         trigger_name = Path(self.outbox).name or "fleet_watcher"
-        _write_result(self.outbox, f"{trigger_name}_incremental.yaml", self.dispatch_result)
+        _write_result(
+            self.outbox, f"{trigger_name}_incremental.yaml", self.dispatch_result
+        )
 
     def _cascade_failure(self, name: str):
         """BFS: mark all transitive dependents of a failed task as failed."""
@@ -233,10 +285,9 @@ class FleetWatcher:
         """Build the final result dict with watcher metadata."""
         self.dispatch_result["watcher_completed"] = sorted(self._completed)
         self.dispatch_result["watcher_failed"] = sorted(self._failed)
-        self.dispatch_result["ok"] = (
-            len(self._failed) == 0
-            and self._completed == {t["name"] for t in self.sorted_tasks}
-        )
+        self.dispatch_result["ok"] = len(self._failed) == 0 and self._completed == {
+            t["name"] for t in self.sorted_tasks
+        }
 
         trigger_name = Path(self.outbox).name or "fleet_watcher"
         _write_result(self.outbox, f"{trigger_name}_final.yaml", self.dispatch_result)

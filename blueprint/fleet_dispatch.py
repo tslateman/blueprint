@@ -93,6 +93,27 @@ def _run_fl(args: list[str]) -> subprocess.CompletedProcess:
     )
 
 
+def _fetch_audit(run_id: str) -> list[dict]:
+    """Fetch audit trail entries for a Shipyard run. Fail-open: returns [] on error."""
+    try:
+        r = _run_fl(["audit", "show", run_id, "--json"])
+        if r.returncode != 0:
+            logger.warning(
+                "fl audit show failed for run %s: %s", run_id, r.stderr.strip()
+            )
+            return []
+        return json.loads(r.stdout)
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.warning("Failed to parse audit JSON for run %s: %s", run_id, exc)
+        return []
+    except subprocess.TimeoutExpired:
+        logger.warning("fl audit show timed out for run %s", run_id)
+        return []
+    except Exception as exc:
+        logger.warning("Unexpected error fetching audit for run %s: %s", run_id, exc)
+        return []
+
+
 def dispatch_fleet(
     payload_path: str,
     outbox: str,
@@ -114,6 +135,7 @@ def dispatch_fleet(
         "tasks_reviewed": 0,
         "task_ids": {},
         "review_verdicts": {},
+        "audit": [],
         "errors": [],
     }
 
@@ -248,6 +270,16 @@ def dispatch_fleet(
             continue
 
         result["tasks_driven"] += 1
+
+        # Fetch audit trail for the drive run
+        try:
+            drive_data = json.loads(r.stdout)
+            run_id = drive_data.get("run_id")
+        except (json.JSONDecodeError, TypeError):
+            run_id = None
+        if run_id:
+            entries = _fetch_audit(run_id)
+            result["audit"].extend(entries)
 
     # 6. Review driven tasks via Reck judgment layer
     reck_dir = os.environ.get(
@@ -417,6 +449,18 @@ def _lore_error(msg: str) -> None:
         )
     except Exception:
         logger.debug("lore capture failed (non-fatal)")
+
+
+def halt_fleet(target: str = "--all") -> dict:
+    """Halt Shipyard agents. Pass a task_id or '--all'."""
+    args = ["halt", target] if target != "--all" else ["halt", "--all"]
+    try:
+        r = _run_fl(args)
+        if r.returncode == 0:
+            return {"ok": True, "output": r.stdout.strip()}
+        return {"ok": False, "error": r.stderr.strip()}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "halt timed out"}
 
 
 def dispatch_fleet_with_watch(
