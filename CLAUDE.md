@@ -28,7 +28,7 @@ Spec-driven LLM agent framework. Pipeline: YAML spec → parser → compiler →
 - Reck review runs after fleet drive for quality judgment
 - Timer triggers fire actions on a recurring interval — `type: timer` with `interval` in spec triggers
 - Fleet watcher polls driven tasks and drives dependents as prerequisites complete — see `blueprint/fleet_watcher.py`
-- Multi-provider fallback: Gemini → OpenAI → Anthropic
+- Multi-provider fallback: Anthropic → Gemini → OpenAI
 - Lore integration: `lore_context` in specs triggers automatic memory hydration
 - Python 3.12+, dependencies managed via `uv`
 

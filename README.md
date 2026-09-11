@@ -6,7 +6,7 @@ Blueprint is a spec-driven framework for building, enforcing, and automating LLM
 
 1.  **Spec-Driven Intent**: Define agent behavior and constraints in YAML.
 2.  **Dynamic Enforcement**: Compile specs into Pydantic models via `instructor`.
-3.  **Multi-Provider Fallback**: Enforce schemas across Gemini, OpenAI, and Anthropic with automatic provider failover.
+3.  **Multi-Provider Fallback**: Enforce schemas across Anthropic, Gemini, and OpenAI with automatic provider failover.
 4.  **Secure Execution (Vault)**: Run generated code in a Zero-Trust sandbox using `shuru`.
 5.  **Long-Term Memory (Lore)**: Hydrate prompts with project-specific context via `lore`.
 6.  **Autonomous Orchestration**: Event-driven triggers, fleet dispatch, and self-healing guardian processes.
@@ -30,9 +30,9 @@ Blueprint is a spec-driven framework for building, enforcing, and automating LLM
    ```
 2. Configure your `.env` file with at least one API key:
    ```bash
-   GEMINI_API_KEY=your_key
-   # Optional fallback keys
    ANTHROPIC_API_KEY=your_key
+   # Optional fallback keys
+   GEMINI_API_KEY=your_key
    OPENAI_API_KEY=your_key
    ```
 
