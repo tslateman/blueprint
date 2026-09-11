@@ -17,7 +17,8 @@ outbox/
 .eval_cache/
 
 # Environment variables
-.env
+.env*
+!.env.example
 
 # macOS metadata
 .DS_Store
