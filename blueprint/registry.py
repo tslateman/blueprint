@@ -1,6 +1,6 @@
 """
 Blueprint Registry
-Manages the mapping between project model names and their corresponding 
+Manages the mapping between project model names and their corresponding
 Blueprint specification files.
 """
 
@@ -8,15 +8,15 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 
+
 class BlueprintRegistry:
     """Registry for looking up Blueprints by model/domain."""
-    
+
     def __init__(self, blueprints_dir: str = "blueprints"):
         self.blueprints_dir = Path(blueprints_dir)
         self._registry: Dict[str, str] = {
             "plan.FeatureEntitlement": "factory_generator/plan_entitlements.yaml",
             "tips.Configuration": "factory_generator/tipping_config.yaml",
-            "payments.GatewayProfile": "factory_generator/payments_gateway.yaml",
         }
 
     def get_spec_path(self, model_name: str) -> Optional[str]:
