@@ -15,7 +15,7 @@ from watchdog.events import FileSystemEventHandler
 from blueprint.parser import SpecParser
 from blueprint.compiler import BlueprintCompiler
 from blueprint.enforcer import SchemaEnforcer
-from blueprint.fleet_dispatch import dispatch_fleet
+from blueprint.fleet_dispatch import dispatch_fleet, _write_result
 
 if TYPE_CHECKING:
     from blueprint.tracer import TracingCollector
@@ -123,18 +123,37 @@ class BlueprintFleetHandler(FileSystemEventHandler):
                 )
             except Exception:
                 pass
-        if self.watch:
-            from blueprint.fleet_dispatch import dispatch_fleet_with_watch
+        try:
+            if self.watch:
+                from blueprint.fleet_dispatch import dispatch_fleet_with_watch
 
-            result = dispatch_fleet_with_watch(
-                event.src_path,
+                result = dispatch_fleet_with_watch(
+                    event.src_path,
+                    self.outbox,
+                    self.runtime,
+                    watch=True,
+                    poll_interval=self.poll_interval,
+                )
+            else:
+                result = dispatch_fleet(event.src_path, self.outbox, self.runtime)
+        except Exception as e:
+            print(f"[ERROR] Fleet dispatch failed for {event.src_path}: {e}")
+            _write_result(
                 self.outbox,
-                self.runtime,
-                watch=True,
-                poll_interval=self.poll_interval,
+                Path(event.src_path).name,
+                {
+                    "ok": False,
+                    "team": None,
+                    "tasks_created": 0,
+                    "tasks_driven": 0,
+                    "tasks_reviewed": 0,
+                    "task_ids": {},
+                    "review_verdicts": {},
+                    "audit": [],
+                    "errors": [str(e)],
+                },
             )
-        else:
-            result = dispatch_fleet(event.src_path, self.outbox, self.runtime)
+            return
         status = "OK" if result.get("ok") else "FAILED"
         print(
             f"[FLEET] {status}: team={result.get('team')}, "

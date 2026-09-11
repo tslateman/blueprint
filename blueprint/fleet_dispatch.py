@@ -85,12 +85,17 @@ def topo_sort(tasks: list[dict]) -> list[dict]:
 
 def _run_fl(args: list[str]) -> subprocess.CompletedProcess:
     """Run the Shipyard `fl` CLI with the given arguments."""
-    return subprocess.run(
-        ["fl"] + args,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    try:
+        return subprocess.run(
+            ["fl"] + args,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except OSError as exc:
+        return subprocess.CompletedProcess(
+            args=["fl"] + args, returncode=1, stdout="", stderr=str(exc)
+        )
 
 
 def _fetch_audit(run_id: str) -> list[dict]:
