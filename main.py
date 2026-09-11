@@ -1,4 +1,3 @@
-import os
 import json
 from dotenv import load_dotenv
 from blueprint.parser import SpecParser
@@ -25,12 +24,7 @@ def main():
     user_input = "I recently visited Paris with John Doe. It was absolutely stunning, though quite busy near the Eiffel Tower. Also, how many hours are in 3 weeks? Write a script to calculate this exactly and print the result."
 
     # 4. Enforce the Output
-    # Ensure OPENAI_API_KEY or GEMINI_API_KEY is available in the environment when testing this!
     print("Enforcing blueprint intent with LLM...")
-    if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("GEMINI_API_KEY"):
-         print("WARNING: Neither OPENAI_API_KEY nor GEMINI_API_KEY is set. The LLM call will fail. Set one and try again.")
-         return
-
     enforcer = SchemaEnforcer()
     result = enforcer.generate(system_prompt, user_input, ResponseModel)
 
@@ -45,12 +39,13 @@ def main():
         print("\n=== Executing Generated Code in Shuru Vault ===")
         router = ToolRouter()
         print(f"Executing Script:\n{script_code}\n")
-        
+
         # We need to wrap in try/except or just let it run
         vault_output = router.execute_python_code(script_code)
         print(f"\n--- Vault Execution Result ---\n{vault_output}")
     else:
         print("\n=== No Python Script Generated ===")
+
 
 if __name__ == "__main__":
     main()
