@@ -20,7 +20,7 @@ Blueprint is a spec-driven framework for building, enforcing, and automating LLM
 
 - [uv](https://github.com/astral-sh/uv)
 - [just](https://github.com/casey/just)
-- [shuru](https://shuru.io) & [lore](https://lore.sh) CLIs
+- [shuru](https://shuru.io) & [lore](https://github.com/tslateman/lore) CLIs
 
 ### Setup
 
