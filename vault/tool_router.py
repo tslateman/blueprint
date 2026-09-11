@@ -1,9 +1,14 @@
+import os
 import subprocess
 from typing import Any, Dict, Optional, TYPE_CHECKING
 from vault.sandbox import ShuruSandbox
 
 if TYPE_CHECKING:
     from blueprint.tracer import TracingCollector
+
+
+def _lore_bin() -> str:
+    return os.environ.get("LORE_BIN", "lore")
 
 
 class ToolRouter:
@@ -55,7 +60,10 @@ class ToolRouter:
             # We use '--brief' or just default recall. Let's use recall for full context mapping
             # but limit output length to avoid blowing up context windows if necessary.
             result = subprocess.run(
-                ["lore", "recall", query], capture_output=True, text=True, check=False
+                [_lore_bin(), "recall", query],
+                capture_output=True,
+                text=True,
+                check=False,
             )
             if self.tracer:
                 try:
@@ -73,7 +81,7 @@ class ToolRouter:
 
     def lore_record_decision(self, decision: str, rationale: str) -> str:
         """Records a decision into Lore's journal with its rationale."""
-        cmd = ["lore", "remember", decision, "--rationale", rationale]
+        cmd = [_lore_bin(), "remember", decision, "--rationale", rationale]
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)

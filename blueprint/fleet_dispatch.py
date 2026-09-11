@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from vault.tool_router import _lore_bin
+
 if TYPE_CHECKING:
     from blueprint.tracer import TracingCollector
 
@@ -418,7 +420,7 @@ def _lore_success(team: str, task_count: int, filename: str) -> None:
     try:
         subprocess.run(
             [
-                "lore",
+                _lore_bin(),
                 "capture",
                 f"Fleet {team} dispatched: {task_count} tasks",
                 "--rationale",
@@ -437,7 +439,7 @@ def _lore_error(msg: str) -> None:
     try:
         subprocess.run(
             [
-                "lore",
+                _lore_bin(),
                 "capture",
                 msg,
                 "--error-type",
