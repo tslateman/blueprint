@@ -301,6 +301,37 @@ class TestDispatchFleet:
         assert result["tasks_created"] == 1
         assert any("task create failed" in e for e in result["errors"])
 
+    def test_task_create_fails_no_drive_of_created_tasks(self, tmp_path):
+        """Task create fails on second task: the first task, already created,
+        must not be driven -- a create failure aborts the whole fleet."""
+        tasks = [
+            {"name": "a", "title": "Task A", "agent_type": "coder"},
+            {"name": "b", "title": "Task B", "agent_type": "coder"},
+            {
+                "name": "c",
+                "title": "Task C",
+                "agent_type": "coder",
+                "depends_on": ["a", "b"],
+            },
+        ]
+
+        def fail_task_b(args, **_kw):
+            if "task" in args and "create" in args and "Task B" in args:
+                return subprocess.CompletedProcess(
+                    args=args, returncode=1, stdout="", stderr="quota exceeded"
+                )
+            return _ok_result(args)
+
+        with patch("blueprint.fleet_dispatch.subprocess.run", side_effect=fail_task_b):
+            path = _write_payload(tmp_path, _make_payload(tasks=tasks))
+            outbox = str(tmp_path / "outbox")
+
+            result = dispatch_fleet(path, outbox, "local")
+
+        assert result["ok"] is False
+        assert result["tasks_created"] == 1
+        assert result["tasks_driven"] == 0
+
     def test_drive_fails_others_still_driven(self, tmp_path):
         """Drive fails for one task: other independent tasks still driven."""
         tasks = [

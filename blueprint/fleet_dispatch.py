@@ -248,6 +248,14 @@ def dispatch_fleet(
             break
 
     # 5. Drive independent tasks (no depends_on)
+    if result["errors"]:
+        _write_result(outbox, filename, result)
+        _lore_error(
+            f"Fleet {team}: {result['tasks_created']}/{len(sorted_tasks)} "
+            f"tasks created, errors: {result['errors']}"
+        )
+        return result
+
     for task in sorted_tasks:
         if task.get("depends_on"):
             continue
