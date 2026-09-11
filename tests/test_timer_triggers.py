@@ -340,3 +340,32 @@ class TestOrchestratorTimerRouting:
         # Clean up
         for t in orch._timers:
             t.stop()
+
+    @patch("blueprint.orchestrator.SchemaEnforcer")
+    @patch("blueprint.orchestrator.BlueprintCompiler.compile_schema", return_value=MagicMock)
+    @patch("blueprint.orchestrator.BlueprintCompiler.compile_prompt", return_value="prompt")
+    @patch("blueprint.orchestrator.SpecParser.parse_yaml")
+    def test_stop_with_timer_only_triggers_does_not_raise(
+        self, mock_parse, _p, _s, _e, tmp_path
+    ):
+        """stop() must not raise when no file handlers ever started the observer."""
+        from blueprint.orchestrator import BlueprintOrchestrator
+
+        spec = {
+            "name": "timer-only-bp",
+            "intent": "test",
+            "output_schema": {"x": {"type": "string"}},
+            "triggers": [{
+                "type": "timer",
+                "action": "enforcer",
+                "interval": 60,
+                "input": "Check",
+                "outbox": str(tmp_path / "outbox"),
+            }],
+        }
+        mock_parse.return_value = spec
+
+        orch = BlueprintOrchestrator([str(tmp_path / "bp.yaml")])
+        orch.start()
+
+        orch.stop()

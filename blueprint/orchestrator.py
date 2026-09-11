@@ -270,5 +270,6 @@ class BlueprintOrchestrator:
     def stop(self):
         for timer in self._timers:
             timer.stop()
-        self.observer.stop()
-        self.observer.join()
+        if self.observer.is_alive():
+            self.observer.stop()
+            self.observer.join()
