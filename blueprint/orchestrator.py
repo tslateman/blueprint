@@ -46,11 +46,22 @@ class BlueprintFileSystemHandler(FileSystemEventHandler):
         self.system_prompt = BlueprintCompiler.compile_prompt(self.spec)
         self.ResponseModel = BlueprintCompiler.compile_schema(self.spec)
 
+        self._processed = set()
+        self._processed_lock = threading.Lock()
+
         os.makedirs(self.path, exist_ok=True)
         os.makedirs(self.outbox, exist_ok=True)
 
     def on_created(self, event):
+        self._handle_event(event)
+
+    def on_modified(self, event):
+        self._handle_event(event)
+
+    def _handle_event(self, event):
         if event.is_directory or not event.src_path.endswith(self.extension):
+            return
+        if event.src_path in self._processed:
             return
 
         print(f"[ORCHESTRATOR] Event Triggered: {event.src_path}")
@@ -60,7 +71,7 @@ class BlueprintFileSystemHandler(FileSystemEventHandler):
                     "trigger_fired",
                     {
                         "path": event.src_path,
-                        "event_type": "created",
+                        "event_type": event.event_type,
                         "handler": "file",
                     },
                 )
@@ -75,6 +86,11 @@ class BlueprintFileSystemHandler(FileSystemEventHandler):
 
             if not user_input:
                 return
+
+            with self._processed_lock:
+                if file_path in self._processed:
+                    return
+                self._processed.add(file_path)
 
             result = self.enforcer.generate(
                 self.system_prompt, user_input, self.ResponseModel
@@ -104,12 +120,30 @@ class BlueprintFleetHandler(FileSystemEventHandler):
         self.runtime = trigger_config.get("runtime", "local")
         self.watch = trigger_config.get("watch", False)
         self.poll_interval = trigger_config.get("poll_interval", 30.0)
+        self._processed = set()
+        self._processed_lock = threading.Lock()
         os.makedirs(self.path, exist_ok=True)
         os.makedirs(self.outbox, exist_ok=True)
 
     def on_created(self, event):
+        self._handle_event(event)
+
+    def on_modified(self, event):
+        self._handle_event(event)
+
+    def _handle_event(self, event):
         if event.is_directory or not event.src_path.endswith(self.extension):
             return
+        if event.src_path in self._processed:
+            return
+        if os.path.getsize(event.src_path) == 0:
+            return
+
+        with self._processed_lock:
+            if event.src_path in self._processed:
+                return
+            self._processed.add(event.src_path)
+
         print(f"[FLEET] Dispatch triggered: {event.src_path}")
         if self.tracer:
             try:
@@ -117,7 +151,7 @@ class BlueprintFleetHandler(FileSystemEventHandler):
                     "trigger_fired",
                     {
                         "path": event.src_path,
-                        "event_type": "created",
+                        "event_type": event.event_type,
                         "handler": "fleet",
                     },
                 )
