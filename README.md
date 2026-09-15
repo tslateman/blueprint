@@ -111,7 +111,7 @@ The orchestrator compiles the blueprint once, then processes each incoming file 
 
 ### 6. Guardian (Self-Healing Daemon)
 
-The `BlueprintGuardian` extends the orchestrator with periodic health checks and drift detection. It audits blueprint specs on a configurable interval and triggers self-healing remediations when it finds mismatches between specs and implementation.
+The `BlueprintGuardian` extends the orchestrator with periodic health checks. It re-parses each blueprint spec on a configurable interval and triggers self-healing remediations when a spec fails to load.
 
 ```bash
 just guard       # Start the guardian daemon

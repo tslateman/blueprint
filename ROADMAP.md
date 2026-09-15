@@ -33,7 +33,7 @@ This roadmap outlines the evolution of Blueprint into a platform for building, e
 
 **Goal**: Achieving "Project Stability" through continuous, self-healing background processes.
 
-- [x] **Background Guardian**: A resident daemon that monitors system "drift" and auto-triggers remediations.
+- [x] **Background Guardian**: A resident daemon that re-parses blueprint specs on an interval and auto-triggers remediations when a spec fails to load.
 - [ ] **Self-Correcting Blueprints**: Enable agents to propose updates to their own `output_schema` as production data evolves.
 - [x] **Self-Healing Agent**: A meta-agent that analyzes errors and applies fixes.
 - [x] **Smart Fallback**: Automatic failover to the Gemini CLI if no API keys are found.
