@@ -19,7 +19,8 @@ This roadmap outlines the evolution of Blueprint into a platform for building, e
 
 **Goal**: Move from transient executions to long-running, event-aware agent swarms.
 
-- [x] **Event-Driven Triggers**: Implement a `triggers:` spec to handle File System, Webhook, and Timer events.
+- [x] **Event-Driven Triggers (File System, Timer)**: Implement a `triggers:` spec to handle File System and Timer events.
+- [ ] **Event-Driven Triggers (Webhook)**: Extend the `triggers:` spec to handle Webhook events.
 - [x] **State Persistence**: The orchestrator and fleet dispatch checkpoint results to the outbox, enabling agents to resume from prior state.
 - [x] **Cross-Agent Hand-off**: Fleet dispatch delegates to specialist sub-agents via Shipyard's `fl` CLI, with topological task ordering and dependency resolution.
 - [x] **Agent Registry**: A centralized service discovery for specialized blueprints (The "Agent Team").
