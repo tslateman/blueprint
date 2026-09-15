@@ -95,7 +95,7 @@ The `BlueprintOrchestrator` watches for filesystem events and dispatches bluepri
 
 ```yaml
 triggers:
-  - type: filesystem
+  - type: file
     path: inbox
     extension: .txt
     outbox: outbox
