@@ -22,6 +22,16 @@ Blueprint is a spec-driven framework for building, enforcing, and automating LLM
 - [just](https://github.com/casey/just)
 - [shuru](https://shuru.io) & [lore](https://lore.sh) CLIs
 
+Blueprint shells out to `lore` by resolving it through `PATH`, so a shell
+alias for `lore` (e.g. `alias lore=...` in `.zshrc`) will not work — Python's
+`subprocess` never sees shell aliases. Either put a `lore` executable on
+`PATH` or point Blueprint at it directly with the `LORE_BIN` environment
+variable:
+
+```bash
+export LORE_BIN=~/dev/lore/lore.sh
+```
+
 ### Setup
 
 1. Clone the repo and install dependencies:
