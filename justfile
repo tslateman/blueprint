@@ -34,6 +34,10 @@ heal-demo:
 eval-api:
     uv run pytest tests/test_evals.py
 
+# Audit locked dependencies for known vulnerabilities
+audit:
+    sh tests/test_vulnerable_locked_deps.sh
+
 # Remove cache files and temporary data
 clean:
     rm -rf .pytest_cache
