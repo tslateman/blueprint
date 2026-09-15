@@ -215,6 +215,32 @@ class TestDispatchFleet:
         assert len(task_creates) == 2
         assert len(drives) == 2
 
+    def test_independent_tasks_driven_in_parallel(self, tmp_path):
+        """Two independent tasks with a 1s drive each complete in under 1.5s."""
+        import time
+
+        def slow_drive(args, **_kw):
+            if args[0] == "fl" and len(args) > 1 and args[1] == "drive":
+                time.sleep(1)
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=json.dumps({"run_id": None}),
+                    stderr="",
+                )
+            return _ok_result(args)
+
+        with patch("blueprint.fleet_dispatch.subprocess.run", side_effect=slow_drive):
+            path = _write_payload(tmp_path, _make_payload())
+            outbox = str(tmp_path / "outbox")
+
+            start = time.time()
+            result = dispatch_fleet(path, outbox, "local")
+            elapsed = time.time() - start
+
+        assert result["tasks_driven"] == 2
+        assert elapsed < 1.5
+
     @patch("blueprint.fleet_dispatch.subprocess.run", side_effect=_ok_result)
     def test_dependent_task_not_driven(self, _mock_run, tmp_path):
         """Task B depends on A: only A is driven."""

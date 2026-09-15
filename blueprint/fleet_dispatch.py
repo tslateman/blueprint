@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import yaml
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -96,6 +97,32 @@ def _run_fl(args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(
             args=["fl"] + args, returncode=1, stdout="", stderr=str(exc)
         )
+
+
+def _drive_task(task: dict, task_id: str, runtime: str) -> dict:
+    """Drive a single task via `fl drive` and fetch its audit trail."""
+    try:
+        r = _run_fl(["drive", task_id, "--runtime", runtime])
+    except subprocess.TimeoutExpired:
+        return {
+            "error": f"fl drive timed out for '{task['name']}' ({task_id})",
+            "audit": [],
+        }
+
+    if r.returncode != 0:
+        return {
+            "error": f"fl drive failed for '{task['name']}' ({task_id}): {r.stderr.strip()}",
+            "audit": [],
+        }
+
+    try:
+        drive_data = json.loads(r.stdout)
+        run_id = drive_data.get("run_id")
+    except (json.JSONDecodeError, TypeError):
+        run_id = None
+
+    audit = _fetch_audit(run_id) if run_id else []
+    return {"error": None, "audit": audit}
 
 
 def _fetch_audit(run_id: str) -> list[dict]:
@@ -252,7 +279,7 @@ def dispatch_fleet(
             )
             break
 
-    # 5. Drive independent tasks (no depends_on)
+    # 5. Drive independent tasks (no depends_on) in parallel
     if result["errors"]:
         _write_result(outbox, filename, result)
         _lore_error(
@@ -261,38 +288,23 @@ def dispatch_fleet(
         )
         return result
 
-    for task in sorted_tasks:
-        if task.get("depends_on"):
-            continue
-        task_id = result["task_ids"].get(task["name"])
-        if not task_id:
-            continue
-
-        try:
-            r = _run_fl(["drive", task_id, "--runtime", runtime])
-        except subprocess.TimeoutExpired:
-            result["errors"].append(
-                f"fl drive timed out for '{task['name']}' ({task_id})"
-            )
-            continue
-
-        if r.returncode != 0:
-            result["errors"].append(
-                f"fl drive failed for '{task['name']}' ({task_id}): {r.stderr.strip()}"
-            )
-            continue
-
-        result["tasks_driven"] += 1
-
-        # Fetch audit trail for the drive run
-        try:
-            drive_data = json.loads(r.stdout)
-            run_id = drive_data.get("run_id")
-        except (json.JSONDecodeError, TypeError):
-            run_id = None
-        if run_id:
-            entries = _fetch_audit(run_id)
-            result["audit"].extend(entries)
+    drivable = [
+        (task, result["task_ids"][task["name"]])
+        for task in sorted_tasks
+        if not task.get("depends_on") and result["task_ids"].get(task["name"])
+    ]
+    if drivable:
+        with ThreadPoolExecutor(max_workers=len(drivable)) as executor:
+            futures = [
+                executor.submit(_drive_task, task, task_id, runtime)
+                for task, task_id in drivable
+            ]
+            for outcome in (f.result() for f in futures):
+                if outcome["error"]:
+                    result["errors"].append(outcome["error"])
+                    continue
+                result["tasks_driven"] += 1
+                result["audit"].extend(outcome["audit"])
 
     # 6. Review driven tasks via Reck judgment layer
     reck_dir = os.environ.get(
