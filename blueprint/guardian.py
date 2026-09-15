@@ -12,6 +12,8 @@ from blueprint.orchestrator import BlueprintOrchestrator
 from blueprint.parser import SpecParser
 from blueprint.compiler import BlueprintCompiler
 from blueprint.enforcer import SchemaEnforcer
+from blueprint.compiler import BlueprintCompiler
+
 
 
 class BlueprintGuardian(BlueprintOrchestrator):
