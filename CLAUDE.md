@@ -27,6 +27,7 @@ Spec-driven LLM agent framework. Pipeline: YAML spec → parser → compiler →
 - Fleet dispatch bridges to Shipyard (`fl` CLI) — see `blueprint/fleet_dispatch.py`
 - Reck review runs after fleet drive for quality judgment
 - Timer triggers fire actions on a recurring interval — `type: timer` with `interval` in spec triggers
+- Webhook triggers take a localhost POST — `type: webhook` with `path` and `port`; the body is the enforcer input or the fleet payload. Bind is 127.0.0.1 only, with no auth scheme
 - Fleet watcher polls driven tasks and drives dependents as prerequisites complete — see `blueprint/fleet_watcher.py`
 - Multi-provider fallback: Anthropic → Gemini → OpenAI
 - Lore integration: `lore_context` in specs triggers automatic memory hydration
