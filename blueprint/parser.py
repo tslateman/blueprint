@@ -32,11 +32,32 @@ class SpecParser:
                 if invalid:
                     raise ValueError(f"Unknown trigger action(s): {invalid}")
 
-                # Validate timer triggers
+                # Validate typed triggers
                 for trigger in spec["triggers"]:
                     ttype = trigger.get("type", "file")
-                    if ttype not in ("file", "timer"):
+                    if ttype not in ("file", "timer", "webhook"):
                         raise ValueError(f"Unknown trigger type: '{ttype}'")
+
+                    if ttype == "webhook":
+                        path_value = trigger.get("path")
+                        if (
+                            not isinstance(path_value, str)
+                            or not path_value.startswith("/")
+                        ):
+                            raise ValueError(
+                                "Webhook trigger requires 'path' starting with '/'"
+                            )
+                        port = trigger.get("port")
+                        if (
+                            isinstance(port, bool)
+                            or not isinstance(port, int)
+                            or port < 1
+                            or port > 65535
+                        ):
+                            raise ValueError(
+                                "Webhook trigger requires 'port' as an integer "
+                                "from 1 to 65535"
+                            )
 
                     if ttype == "timer":
                         has_interval = "interval" in trigger

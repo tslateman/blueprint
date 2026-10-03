@@ -119,6 +119,16 @@ just orchestrate
 
 The orchestrator compiles the blueprint once, then processes each incoming file against the spec. Results checkpoint to the outbox.
 
+A webhook trigger is the same action with an HTTP delivery. It listens on `127.0.0.1` only. `POST` the raw body to `path`; that body is the enforcer input, or the fleet payload when `action` is `fleet`. There is no public bind and no auth scheme.
+
+```yaml
+triggers:
+  - type: webhook
+    path: /hook
+    port: 8787
+    outbox: outbox
+```
+
 ### 6. Guardian (Self-Healing Daemon)
 
 The `BlueprintGuardian` extends the orchestrator with periodic health checks. It re-parses each blueprint spec on a configurable interval and triggers self-healing remediations when a spec fails to load.

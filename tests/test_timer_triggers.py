@@ -134,7 +134,7 @@ class TestTimerParserValidation:
 
     def test_unknown_trigger_type_raises(self, tmp_path):
         """Unknown trigger type raises ValueError."""
-        spec = _base_enforcer_spec(type="webhook")
+        spec = _base_enforcer_spec(type="socket")
         with pytest.raises(ValueError, match="Unknown trigger type"):
             SpecParser.parse_yaml(_write_spec(tmp_path, spec))
 

@@ -6,7 +6,10 @@ Listens for events defined in Blueprints and triggers executions.
 import json
 import logging
 import os
+import tempfile
 import threading
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from watchdog.observers import Observer
@@ -265,6 +268,150 @@ class BlueprintTimerHandler:
             self._thread.join(timeout=5)
 
 
+class _LocalWebhookServer(ThreadingHTTPServer):
+    """Loopback HTTP server. allow_reuse_address is set before bind."""
+
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class BlueprintWebhookHandler:
+    """Accepts POST deliveries on 127.0.0.1 and runs the trigger action.
+
+    The bind address is fixed. There is no host field and no auth scheme:
+    a webhook trigger is another way to deliver the same enforcer input or
+    fleet payload the file and timer handlers already consume.
+    """
+
+    def __init__(self, spec: dict, trigger_config: dict):
+        self.spec = spec
+        self.trigger_config = trigger_config
+        self.action = trigger_config.get("action", "enforcer")
+        self.path = trigger_config["path"]
+        self.port = trigger_config["port"]
+        self.outbox = trigger_config.get("outbox", "outbox")
+        os.makedirs(self.outbox, exist_ok=True)
+
+        self._httpd = None
+        self._thread = None
+
+        if self.action == "enforcer":
+            self.enforcer = SchemaEnforcer(
+                use_cli=(os.environ.get("USE_GEMINI_CLI", "").lower() == "true")
+            )
+            self.system_prompt = BlueprintCompiler.compile_prompt(self.spec)
+            self.ResponseModel = BlueprintCompiler.compile_schema(self.spec)
+        elif self.action == "fleet":
+            self.runtime = trigger_config.get("runtime", "local")
+
+    def start(self):
+        handler = self
+
+        class _RequestHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                handler.handle_request(self)
+
+            def do_GET(self):
+                handler.reject_method(self)
+
+            def do_PUT(self):
+                handler.reject_method(self)
+
+            def do_DELETE(self):
+                handler.reject_method(self)
+
+            def do_PATCH(self):
+                handler.reject_method(self)
+
+            def do_HEAD(self):
+                handler.reject_method(self)
+
+            def log_message(self, fmt, *args):
+                logger.info("[WEBHOOK] " + fmt, *args)
+
+        self._httpd = _LocalWebhookServer(("127.0.0.1", self.port), _RequestHandler)
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    def handle_request(self, request: BaseHTTPRequestHandler) -> None:
+        request_path = request.path.split("?", 1)[0]
+        body = self._read_body(request)
+        if request_path != self.path:
+            self._send(request, 404)
+            return
+        if body is None or not body.strip():
+            self._send(request, 400)
+            return
+
+        try:
+            if self.action == "enforcer":
+                self._fire_enforcer(body)
+            elif self.action == "fleet":
+                self._fire_fleet(body)
+        except Exception as exc:
+            logger.error("[WEBHOOK] Action failed: %s", exc)
+            self._send(request, 500)
+            return
+        self._send(request, 204)
+
+    def _read_body(self, request: BaseHTTPRequestHandler) -> str | None:
+        """Read the POST body. Returns None when it cannot be used as input."""
+        raw_length = request.headers.get("Content-Length")
+        if raw_length is None:
+            return None
+        try:
+            length = int(raw_length)
+        except ValueError:
+            return None
+        if length < 0:
+            return None
+        try:
+            return request.rfile.read(length).decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    def reject_method(self, request: BaseHTTPRequestHandler) -> None:
+        request.send_response(405)
+        request.send_header("Allow", "POST")
+        request.send_header("Content-Length", "0")
+        request.end_headers()
+
+    def _send(self, request: BaseHTTPRequestHandler, status: int) -> None:
+        request.send_response(status)
+        request.send_header("Content-Length", "0")
+        request.end_headers()
+
+    def _fire_enforcer(self, body: str) -> None:
+        result = self.enforcer.generate(
+            self.system_prompt, body, self.ResponseModel
+        )
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        output_path = os.path.join(self.outbox, f"webhook_{ts}_result.json")
+        with open(output_path, "w") as f:
+            f.write(result.model_dump_json(indent=2))
+        logger.info("[WEBHOOK] Enforcer result written to %s", output_path)
+
+    def _fire_fleet(self, body: str) -> None:
+        fd, payload_path = tempfile.mkstemp(prefix="webhook_", suffix=".yaml")
+        try:
+            os.write(fd, body.encode("utf-8"))
+            os.close(fd)
+            fd = None
+            dispatch_fleet(payload_path, self.outbox, self.runtime)
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if os.path.exists(payload_path):
+                os.unlink(payload_path)
+
+    def stop(self):
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+
+
 class BlueprintOrchestrator:
     """Orchestrates background listeners based on Blueprint specs."""
 
@@ -273,6 +420,7 @@ class BlueprintOrchestrator:
         self.observer = Observer()
         self._handlers = []
         self._timers: list = []
+        self._webhooks: list = []
 
     def start(self):
         """Analyzes blueprints and starts the appropriate observers."""
@@ -293,6 +441,17 @@ class BlueprintOrchestrator:
                     self._timers.append(timer)
                     continue
 
+                if ttype == "webhook":
+                    print(
+                        f"[INIT] Setting up webhook trigger on "
+                        f"127.0.0.1:{trigger['port']}{trigger['path']} "
+                        f"for {path}..."
+                    )
+                    webhook = BlueprintWebhookHandler(spec, trigger)
+                    webhook.start()
+                    self._webhooks.append(webhook)
+                    continue
+
                 # File-based triggers
                 if action == "enforcer":
                     print(f"[INIT] Setting up file-system trigger for {path}...")
@@ -310,12 +469,14 @@ class BlueprintOrchestrator:
         if self._handlers:
             self.observer.start()
 
-        if self._handlers or self._timers:
+        if self._handlers or self._timers or self._webhooks:
             parts = []
             if self._handlers:
                 parts.append(f"{len(self._handlers)} listeners")
             if self._timers:
                 parts.append(f"{len(self._timers)} timers")
+            if self._webhooks:
+                parts.append(f"{len(self._webhooks)} webhooks")
             print(f"[READY] Background Orchestrator running with {', '.join(parts)}.")
         else:
             print("[INFO] No active triggers found in blueprints.")
@@ -323,6 +484,8 @@ class BlueprintOrchestrator:
     def stop(self):
         for timer in self._timers:
             timer.stop()
+        for webhook in self._webhooks:
+            webhook.stop()
         if self.observer.is_alive():
             self.observer.stop()
             self.observer.join()
